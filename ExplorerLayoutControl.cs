@@ -29,6 +29,7 @@ namespace MyFileExplorer
 		{
 			InitializeComponent();
 			folderTreeControl.FolderSelected += (s, e) => folderContentsControl.CurrentPath = e.FolderPath;
+			folderContentsControl.FolderDoubleClick += FolderContentsControl_FolderDoubleClick;
 			pathItemComboBox.Items = Program.SavedPathItems;
 			pathItemComboBox.SelectedFolderChanged += PathItemComboBox_SelectedFolderChanged;
 			if (Program.SavedPathItems.Count > 0)
@@ -38,6 +39,50 @@ namespace MyFileExplorer
 		private void PathItemComboBox_SelectedFolderChanged(object? sender, FolderEventArgs e)
 		{
 			folderTreeControl.RootPath = e.FolderPath;
+		}
+
+		private void FolderContentsControl_FolderDoubleClick(object? sender, FolderEventArgs e)
+		{
+			folderContentsControl.CurrentPath = e.FolderPath;
+			var path = e.FolderPath;
+			BeginInvoke(() => SelectFolderInTree(path));
+		}
+
+		private void SelectFolderInTree(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+				return;
+			path = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			var treeView = folderTreeControl.TreeView;
+			var rootPath = folderTreeControl.RootPath?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			if (string.IsNullOrEmpty(rootPath) || !path.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
+				return; // path not under current tree root
+			var node = FindNodeByPath(treeView.Nodes, path);
+			if (node != null)
+			{
+				treeView.SelectedNode = node;
+				node.EnsureVisible();
+				treeView.Focus();
+			}
+		}
+
+		private static TreeNode? FindNodeByPath(TreeNodeCollection nodes, string path)
+		{
+			foreach (TreeNode node in nodes)
+			{
+				if (node.Tag is not string tag)
+					continue;
+				if (tag == "__unloaded__")
+					continue; // placeholder node, skip
+				if (string.Equals(tag, path, StringComparison.OrdinalIgnoreCase))
+					return node;
+				if (node.Nodes.Count > 0 && !node.IsExpanded)
+					node.Expand();
+				var found = FindNodeByPath(node.Nodes, path);
+				if (found != null)
+					return found;
+			}
+			return null;
 		}
 	}
 }
