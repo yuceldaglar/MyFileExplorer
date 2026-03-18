@@ -28,12 +28,31 @@
 		/// </summary>
 		private void InitializeComponent()
 		{
-			components = new System.ComponentModel.Container();
+			explorerLayoutControl1 = new ExplorerLayoutControl();
+			SuspendLayout();
+			// 
+			// explorerLayoutControl1
+			// 
+			explorerLayoutControl1.Dock = DockStyle.Fill;
+			explorerLayoutControl1.Location = new Point(0, 0);
+			explorerLayoutControl1.Name = "explorerLayoutControl1";
+			explorerLayoutControl1.Size = new Size(800, 450);
+			explorerLayoutControl1.TabIndex = 0;
+			explorerLayoutControl1.Load += explorerLayoutControl1_Load;
+			// 
+			// Form1
+			// 
+			AutoScaleDimensions = new SizeF(10F, 25F);
 			AutoScaleMode = AutoScaleMode.Font;
 			ClientSize = new Size(800, 450);
+			Controls.Add(explorerLayoutControl1);
+			Name = "Form1";
 			Text = "Form1";
+			ResumeLayout(false);
 		}
 
 		#endregion
+
+		private ExplorerLayoutControl explorerLayoutControl1;
 	}
 }

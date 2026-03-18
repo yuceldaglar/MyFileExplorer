@@ -6,5 +6,10 @@ namespace MyFileExplorer
 		{
 			InitializeComponent();
 		}
+
+		private void explorerLayoutControl1_Load(object sender, EventArgs e)
+		{
+
+		}
 	}
 }
