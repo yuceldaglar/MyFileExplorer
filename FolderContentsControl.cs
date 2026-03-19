@@ -15,6 +15,7 @@ namespace MyFileExplorer
 		private int _loadSequence;
 		private int _refreshSequence;
 		private int _newFolderSequence;
+		private readonly Dictionary<string, int> _fileIconIndexByExtension = new(StringComparer.OrdinalIgnoreCase);
 		private static readonly object s_logLock = new();
 		private static readonly string s_logDirectory = Path.Combine(
 			Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -89,6 +90,7 @@ namespace MyFileExplorer
 
 		private void SetupImageLists()
 		{
+			_fileIconIndexByExtension.Clear();
 			listView.LargeImageList = new ImageList
 			{
 				ImageSize = new Size(32, 32),
@@ -184,7 +186,7 @@ namespace MyFileExplorer
 
 		private void AddFileItem(FileInfo file, string source)
 		{
-			const int fileIconIndex = 1;
+			var fileIconIndex = ResolveFileIconIndex(file);
 			var typeDesc = GetFileTypeDescription(file.Extension);
 			var item = new ListViewItem(file.Name, fileIconIndex)
 			{
@@ -193,6 +195,34 @@ namespace MyFileExplorer
 			AddDetailsSubitems(item, file.Name, file.Length, typeDesc, file.LastWriteTime);
 			listView.Items.Add(item);
 			Log($"{source} AddFileItem path='{file.FullName}' itemCount={listView.Items.Count}");
+		}
+
+		private int ResolveFileIconIndex(FileInfo file)
+		{
+			// Index 1 is guaranteed by SetupImageLists as generic file fallback.
+			const int fallbackFileIconIndex = 1;
+			var extension = file.Extension ?? string.Empty;
+			if (string.IsNullOrWhiteSpace(extension))
+				return fallbackFileIconIndex;
+
+			if (_fileIconIndexByExtension.TryGetValue(extension, out var cachedIndex))
+				return cachedIndex;
+
+			var largeList = listView.LargeImageList;
+			var smallList = listView.SmallImageList;
+			if (largeList == null || smallList == null)
+				return fallbackFileIconIndex;
+
+			var expectedIndex = largeList.Images.Count;
+			var added = ShellIconHelper.AddFileTypeIcon(extension, largeList, smallList);
+			if (!added)
+			{
+				_fileIconIndexByExtension[extension] = fallbackFileIconIndex;
+				return fallbackFileIconIndex;
+			}
+
+			_fileIconIndexByExtension[extension] = expectedIndex;
+			return expectedIndex;
 		}
 
 		private static void AddDetailsSubitems(ListViewItem item, string name, long size, string typeDesc, DateTime dateModified)

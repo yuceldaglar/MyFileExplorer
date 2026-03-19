@@ -5,6 +5,7 @@ namespace MyFileExplorer
 	internal static class ShellIconHelper
 	{
 		private const uint SHGFI_ICON = 0x000000100;
+		private const uint SHGFI_USEFILEATTRIBUTES = 0x000000010;
 		private const uint SHGFI_LARGEICON = 0x000000000;
 		private const uint SHGFI_SMALLICON = 0x000000001;
 		private const uint FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
@@ -33,26 +34,73 @@ namespace MyFileExplorer
 		/// </summary>
 		public static void AddFolderAndFileIcons(ImageList largeList, ImageList smallList)
 		{
-			// Folder: use a real folder path so we get the correct shell icon
-			var folderPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-			AddIconToLists(folderPath, FILE_ATTRIBUTE_DIRECTORY, largeList, smallList);
+			largeList.Images.Clear();
+			smallList.Images.Clear();
 
-			// File: use a dummy .txt path to get generic document icon
-			var filePath = Path.Combine(Path.GetTempPath(), "dummy.txt");
-			AddIconToLists(filePath, FILE_ATTRIBUTE_NORMAL, largeList, smallList);
+			// Folder: use a real folder path so we get the correct shell icon.
+			var folderPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+			var addedFolder = AddIconToLists(folderPath, FILE_ATTRIBUTE_DIRECTORY, useFileAttributes: false, largeList, smallList);
+
+			// File: use extension + SHGFI_USEFILEATTRIBUTES to get generic file icon
+			// without requiring an existing file on disk.
+			const string filePath = ".txt";
+			var addedFile = AddIconToLists(filePath, FILE_ATTRIBUTE_NORMAL, useFileAttributes: true, largeList, smallList);
+
+			// Keep indices stable for FolderContentsControl:
+			// 0 => folder, 1 => file
+			if (!addedFolder)
+			{
+				largeList.Images.Add(SystemIcons.WinLogo);
+				smallList.Images.Add(SystemIcons.WinLogo);
+			}
+
+			if (!addedFile)
+			{
+				largeList.Images.Add(SystemIcons.Application);
+				smallList.Images.Add(SystemIcons.Application);
+			}
 		}
 
-		private static void AddIconToLists(string path, uint fileAttributes, ImageList largeList, ImageList smallList)
+		/// <summary>
+		/// Adds the shell icon for a file extension to both image lists.
+		/// Returns true when both large and small icons were added.
+		/// </summary>
+		public static bool AddFileTypeIcon(string extensionOrFileName, ImageList largeList, ImageList smallList)
 		{
+			if (largeList == null || smallList == null)
+				return false;
+
+			var token = extensionOrFileName?.Trim() ?? string.Empty;
+			if (string.IsNullOrEmpty(token))
+				return false;
+
+			// For extension-based shell icon lookup with SHGFI_USEFILEATTRIBUTES, ".ext" is sufficient.
+			if (!token.Contains(Path.DirectorySeparatorChar) &&
+				!token.Contains(Path.AltDirectorySeparatorChar) &&
+				!token.Contains('.') )
+			{
+				token = "." + token;
+			}
+
+			return AddIconToLists(token, FILE_ATTRIBUTE_NORMAL, useFileAttributes: true, largeList, smallList);
+		}
+
+		private static bool AddIconToLists(string path, uint fileAttributes, bool useFileAttributes, ImageList largeList, ImageList smallList)
+		{
+			var addedLarge = false;
+			var addedSmall = false;
+			var baseFlags = SHGFI_ICON | (useFileAttributes ? SHGFI_USEFILEATTRIBUTES : 0);
+
 			var shfi = new SHFILEINFO();
 			// Large icon
-			_ = SHGetFileInfo(path, fileAttributes, ref shfi, (uint)Marshal.SizeOf(shfi), SHGFI_ICON | SHGFI_LARGEICON);
+			_ = SHGetFileInfo(path, fileAttributes, ref shfi, (uint)Marshal.SizeOf(shfi), baseFlags | SHGFI_LARGEICON);
 			if (shfi.hIcon != IntPtr.Zero)
 			{
 				try
 				{
 					using var icon = (Icon)Icon.FromHandle(shfi.hIcon).Clone();
 					largeList.Images.Add(icon);
+					addedLarge = true;
 				}
 				finally
 				{
@@ -61,19 +109,22 @@ namespace MyFileExplorer
 			}
 			// Small icon
 			shfi = new SHFILEINFO();
-			_ = SHGetFileInfo(path, fileAttributes, ref shfi, (uint)Marshal.SizeOf(shfi), SHGFI_ICON | SHGFI_SMALLICON);
+			_ = SHGetFileInfo(path, fileAttributes, ref shfi, (uint)Marshal.SizeOf(shfi), baseFlags | SHGFI_SMALLICON);
 			if (shfi.hIcon != IntPtr.Zero)
 			{
 				try
 				{
 					using var icon = (Icon)Icon.FromHandle(shfi.hIcon).Clone();
 					smallList.Images.Add(icon);
+					addedSmall = true;
 				}
 				finally
 				{
 					DestroyIcon(shfi.hIcon);
 				}
 			}
+
+			return addedLarge && addedSmall;
 		}
 	}
 }
