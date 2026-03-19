@@ -31,10 +31,22 @@ namespace MyFileExplorer
 			folderTreeControl.FolderSelected += (s, e) => folderContentsControl.CurrentPath = e.FolderPath;
 			folderContentsControl.FolderDoubleClick += FolderContentsControl_FolderDoubleClick;
 			folderContentsControl.RefreshRequested += FolderContentsControl_RefreshRequested;
-			pathItemComboBox.Items = Program.SavedPathItems;
 			pathItemComboBox.SelectedFolderChanged += PathItemComboBox_SelectedFolderChanged;
+			pathItemComboBox.Items = Program.SavedPathItems;
 			if (Program.SavedPathItems.Count > 0)
 				pathItemComboBox.SelectedItem = Program.SavedPathItems[0]; // show first folder in tree on load
+			ApplyInitialSelection();
+		}
+
+		private void ApplyInitialSelection()
+		{
+			// Ensure tree/content are initialized even if selection changed before event wiring
+			// or if re-selecting the same item does not re-fire SelectedIndexChanged.
+			var selectedPath = pathItemComboBox.SelectedPath;
+			if (string.IsNullOrWhiteSpace(selectedPath))
+				return;
+			folderTreeControl.RootPath = selectedPath;
+			folderContentsControl.CurrentPath = selectedPath;
 		}
 
 		private void FolderContentsControl_RefreshRequested(object? sender, EventArgs e)
