@@ -8,6 +8,13 @@ namespace MyFileExplorer
 	public partial class ExplorerLayoutControl : UserControl
 	{
 		/// <summary>
+		/// Raised when the current folder path shown by this explorer instance changes.
+		/// </summary>
+		[Category("Action")]
+		[Description("Raised when the active folder path changes.")]
+		public event EventHandler<FolderEventArgs>? CurrentPathChanged;
+
+		/// <summary>
 		/// Gets the PathItem ComboBox at the top of the left panel.
 		/// </summary>
 		[Browsable(false)]
@@ -24,6 +31,12 @@ namespace MyFileExplorer
 		/// </summary>
 		[Browsable(false)]
 		public FolderContentsControl FolderContents => folderContentsControl;
+
+		/// <summary>
+		/// Gets the current folder path displayed by this explorer instance.
+		/// </summary>
+		[Browsable(false)]
+		public string CurrentPath => folderContentsControl.CurrentPath;
 
 		/// <summary>
 		/// Gets the terminal control in the bottom panel spanning full width.
@@ -53,6 +66,7 @@ namespace MyFileExplorer
 				return;
 			folderTreeControl.RootPath = selectedPath;
 			folderContentsControl.CurrentPath = selectedPath;
+			OnCurrentPathChanged(selectedPath);
 		}
 
 		private void FolderContentsControl_RefreshRequested(object? sender, EventArgs e)
@@ -64,20 +78,32 @@ namespace MyFileExplorer
 		{
 			folderContentsControl.CurrentPath = e.FolderPath;
 			SyncTerminalDirectory(e.FolderPath);
+			OnCurrentPathChanged(e.FolderPath);
 		}
 
 		private void PathItemComboBox_SelectedFolderChanged(object? sender, FolderEventArgs e)
 		{
 			folderTreeControl.RootPath = e.FolderPath;
 			SelectRootNodeIfAvailable(e.FolderPath);
+			OnCurrentPathChanged(e.FolderPath);
 		}
 
 		private void FolderContentsControl_FolderDoubleClick(object? sender, FolderEventArgs e)
 		{
 			folderContentsControl.CurrentPath = e.FolderPath;
 			SyncTerminalDirectory(e.FolderPath);
+			OnCurrentPathChanged(e.FolderPath);
 			var path = e.FolderPath;
 			BeginInvoke(() => SelectFolderInTree(path));
+		}
+
+		/// <summary>
+		/// Refreshes both file contents and tree for this explorer instance.
+		/// </summary>
+		public void RefreshExplorer()
+		{
+			folderContentsControl.RefreshContents();
+			folderTreeControl.RefreshTree();
 		}
 
 		private void SyncTerminalDirectory(string selectedPath)
@@ -152,6 +178,11 @@ namespace MyFileExplorer
 					return found;
 			}
 			return null;
+		}
+
+		private void OnCurrentPathChanged(string path)
+		{
+			CurrentPathChanged?.Invoke(this, new FolderEventArgs(path));
 		}
 	}
 }

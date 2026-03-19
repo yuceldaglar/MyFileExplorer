@@ -28,33 +28,33 @@ namespace MyFileExplorer
 		/// </summary>
 		private void InitializeComponent()
 		{
-			explorerLayoutControl1 = new ExplorerLayoutControl();
+			explorerTabControl = new TabControl();
 			SuspendLayout();
 			// 
-			// explorerLayoutControl1
+			// explorerTabControl
 			// 
-			explorerLayoutControl1.Dock = DockStyle.Fill;
-			explorerLayoutControl1.Location = new Point(0, 0);
-			explorerLayoutControl1.Name = "explorerLayoutControl1";
-			explorerLayoutControl1.Size = new Size(800, 450);
-			explorerLayoutControl1.TabIndex = 0;
-			explorerLayoutControl1.Load += explorerLayoutControl1_Load;
+			explorerTabControl.Dock = DockStyle.Fill;
+			explorerTabControl.Location = new Point(0, 0);
+			explorerTabControl.Name = "explorerTabControl";
+			explorerTabControl.SelectedIndex = 0;
+			explorerTabControl.Size = new Size(800, 450);
+			explorerTabControl.TabIndex = 0;
 			// 
 			// Form1
 			// 
 			AutoScaleDimensions = new SizeF(10F, 25F);
 			AutoScaleMode = AutoScaleMode.Font;
 			ClientSize = new Size(800, 450);
-			Controls.Add(explorerLayoutControl1);
+			Controls.Add(explorerTabControl);
 			KeyPreview = true;
 			Name = "Form1";
-			Text = "Form1";
+			Text = "My File Explorer";
 			KeyDown += Form1_KeyDown;
 			ResumeLayout(false);
 		}
 
 		#endregion
 
-		private ExplorerLayoutControl explorerLayoutControl1;
+		private TabControl explorerTabControl;
 	}
 }
