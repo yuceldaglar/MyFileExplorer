@@ -48,7 +48,7 @@ namespace MyFileExplorer
 			Controls.Add(explorerTabControl);
 			KeyPreview = true;
 			Name = "Form1";
-			Text = "My File Explorer";
+			Text = "Developers File Explorer";
 			KeyDown += Form1_KeyDown;
 			ResumeLayout(false);
 		}
