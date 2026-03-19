@@ -30,10 +30,16 @@ namespace MyFileExplorer
 			InitializeComponent();
 			folderTreeControl.FolderSelected += (s, e) => folderContentsControl.CurrentPath = e.FolderPath;
 			folderContentsControl.FolderDoubleClick += FolderContentsControl_FolderDoubleClick;
+			folderContentsControl.RefreshRequested += FolderContentsControl_RefreshRequested;
 			pathItemComboBox.Items = Program.SavedPathItems;
 			pathItemComboBox.SelectedFolderChanged += PathItemComboBox_SelectedFolderChanged;
 			if (Program.SavedPathItems.Count > 0)
 				pathItemComboBox.SelectedItem = Program.SavedPathItems[0]; // show first folder in tree on load
+		}
+
+		private void FolderContentsControl_RefreshRequested(object? sender, EventArgs e)
+		{
+			folderTreeControl.RefreshTree();
 		}
 
 		private void PathItemComboBox_SelectedFolderChanged(object? sender, FolderEventArgs e)

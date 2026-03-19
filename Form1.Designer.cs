@@ -1,4 +1,4 @@
-﻿namespace MyFileExplorer
+namespace MyFileExplorer
 {
 	partial class Form1
 	{
@@ -46,8 +46,10 @@
 			AutoScaleMode = AutoScaleMode.Font;
 			ClientSize = new Size(800, 450);
 			Controls.Add(explorerLayoutControl1);
+			KeyPreview = true;
 			Name = "Form1";
 			Text = "Form1";
+			KeyDown += Form1_KeyDown;
 			ResumeLayout(false);
 		}
 

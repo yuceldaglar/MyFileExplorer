@@ -118,5 +118,137 @@ namespace MyFileExplorer
 			if (e.Node?.Tag is string path && path != UnloadedMarker)
 				FolderSelected?.Invoke(this, new FolderEventArgs(path));
 		}
+
+		/// <summary>
+		/// Reloads the tree from the current <see cref="RootPath"/>.
+		/// </summary>
+		public void RefreshTree()
+		{
+			var path = _rootPath;
+			_rootPath = "";
+			LoadRoot();
+			_rootPath = path ?? "";
+			LoadRoot();
+		}
+
+		private string? GetSelectedFolderPath()
+		{
+			var node = folderTreeView.SelectedNode;
+			if (node?.Tag is not string path || path == UnloadedMarker)
+				return null;
+			return path;
+		}
+
+		private void TreeContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			var hasPath = !string.IsNullOrEmpty(path) && Directory.Exists(path);
+			treeOpenToolStripMenuItem.Enabled = hasPath;
+			treeExpandToolStripMenuItem.Enabled = folderTreeView.SelectedNode != null && folderTreeView.SelectedNode.Nodes.Count > 0;
+			treeCollapseToolStripMenuItem.Enabled = folderTreeView.SelectedNode != null && folderTreeView.SelectedNode.IsExpanded;
+			treeCutToolStripMenuItem.Enabled = hasPath;
+			treeCopyToolStripMenuItem.Enabled = hasPath;
+			treePasteToolStripMenuItem.Enabled = hasPath && FileClipboard.HasPaths;
+			treeNewFolderToolStripMenuItem.Enabled = hasPath;
+			treeRenameToolStripMenuItem.Enabled = hasPath;
+			treeDeleteToolStripMenuItem.Enabled = hasPath;
+			treePropertiesToolStripMenuItem.Enabled = hasPath;
+		}
+
+		private void TreeOpen_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (!string.IsNullOrEmpty(path))
+				FolderSelected?.Invoke(this, new FolderEventArgs(path));
+		}
+
+		private void TreeExpand_Click(object? sender, EventArgs e) => folderTreeView.SelectedNode?.Expand();
+		private void TreeCollapse_Click(object? sender, EventArgs e) => folderTreeView.SelectedNode?.Collapse();
+
+		private void TreeCut_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (!string.IsNullOrEmpty(path))
+				FileClipboard.SetCut(new[] { path });
+		}
+
+		private void TreeCopy_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (!string.IsNullOrEmpty(path))
+				FileClipboard.SetCopy(new[] { path });
+		}
+
+		private void TreePaste_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (!string.IsNullOrEmpty(path))
+			{
+				FileClipboard.PasteTo(path);
+				RefreshTree();
+			}
+		}
+
+		private void TreeNewFolder_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+				return;
+			var basePath = Path.Combine(path, "New folder");
+			var newPath = basePath;
+			for (int i = 0; Directory.Exists(newPath); i++)
+				newPath = $"{basePath} ({(i + 2)})";
+			try
+			{
+				Directory.CreateDirectory(newPath);
+				RefreshTree();
+			}
+			catch { }
+		}
+
+		private void TreeRename_Click(object? sender, EventArgs e) => folderTreeView.SelectedNode?.BeginEdit();
+
+		private void TreeRename_AfterLabelEdit(object? sender, NodeLabelEditEventArgs e)
+		{
+			if (e.Label == null || e.Node?.Tag is not string oldPath)
+				return;
+			var newName = e.Label.Trim();
+			if (string.IsNullOrEmpty(newName))
+				return;
+			var parent = Path.GetDirectoryName(oldPath);
+			if (string.IsNullOrEmpty(parent))
+				return;
+			var newPath = Path.Combine(parent, newName);
+			if (string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
+				return;
+			try
+			{
+				Directory.Move(oldPath, newPath);
+				if (e.Node != null)
+					e.Node.Tag = newPath;
+			}
+			catch
+			{
+				e.CancelEdit = true;
+			}
+		}
+
+		private void TreeDelete_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (string.IsNullOrEmpty(path))
+				return;
+			FileClipboard.Clear();
+			if (FileOperations.RecycleBinDelete(path))
+				RefreshTree();
+		}
+
+		private void TreeProperties_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (string.IsNullOrEmpty(path))
+				return;
+			FilePropertiesForm.ShowForPath(FindForm(), path);
+		}
 	}
 }
