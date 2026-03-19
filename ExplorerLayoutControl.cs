@@ -25,10 +25,16 @@ namespace MyFileExplorer
 		[Browsable(false)]
 		public FolderContentsControl FolderContents => folderContentsControl;
 
+		/// <summary>
+		/// Gets the terminal control in the bottom panel spanning full width.
+		/// </summary>
+		[Browsable(false)]
+		public TerminalControl Terminal => terminalControl;
+
 		public ExplorerLayoutControl()
 		{
 			InitializeComponent();
-			folderTreeControl.FolderSelected += (s, e) => folderContentsControl.CurrentPath = e.FolderPath;
+			folderTreeControl.FolderSelected += FolderTreeControl_FolderSelected;
 			folderContentsControl.FolderDoubleClick += FolderContentsControl_FolderDoubleClick;
 			folderContentsControl.RefreshRequested += FolderContentsControl_RefreshRequested;
 			pathItemComboBox.SelectedFolderChanged += PathItemComboBox_SelectedFolderChanged;
@@ -54,6 +60,12 @@ namespace MyFileExplorer
 			folderTreeControl.RefreshTree();
 		}
 
+		private void FolderTreeControl_FolderSelected(object? sender, FolderEventArgs e)
+		{
+			folderContentsControl.CurrentPath = e.FolderPath;
+			SyncTerminalDirectory(e.FolderPath);
+		}
+
 		private void PathItemComboBox_SelectedFolderChanged(object? sender, FolderEventArgs e)
 		{
 			folderTreeControl.RootPath = e.FolderPath;
@@ -63,8 +75,27 @@ namespace MyFileExplorer
 		private void FolderContentsControl_FolderDoubleClick(object? sender, FolderEventArgs e)
 		{
 			folderContentsControl.CurrentPath = e.FolderPath;
+			SyncTerminalDirectory(e.FolderPath);
 			var path = e.FolderPath;
 			BeginInvoke(() => SelectFolderInTree(path));
+		}
+
+		private void SyncTerminalDirectory(string selectedPath)
+		{
+			if (string.IsNullOrWhiteSpace(selectedPath) || !Directory.Exists(selectedPath))
+				return;
+
+			// Keep terminal location aligned with active explorer navigation source.
+			if (terminalControl.ShellType == TerminalShellType.PowerShell)
+			{
+				var escapedPath = selectedPath.Replace("'", "''", StringComparison.Ordinal);
+				terminalControl.SendCommand($"Set-Location -LiteralPath '{escapedPath}'");
+			}
+			else
+			{
+				var escapedPath = selectedPath.Replace("\"", "\"\"", StringComparison.Ordinal);
+				terminalControl.SendCommand($"cd /d \"{escapedPath}\"");
+			}
 		}
 
 		private void SelectFolderInTree(string path)
