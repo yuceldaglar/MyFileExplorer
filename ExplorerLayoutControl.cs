@@ -57,6 +57,7 @@ namespace MyFileExplorer
 		private void PathItemComboBox_SelectedFolderChanged(object? sender, FolderEventArgs e)
 		{
 			folderTreeControl.RootPath = e.FolderPath;
+			SelectRootNodeIfAvailable(e.FolderPath);
 		}
 
 		private void FolderContentsControl_FolderDoubleClick(object? sender, FolderEventArgs e)
@@ -82,6 +83,25 @@ namespace MyFileExplorer
 				node.EnsureVisible();
 				treeView.Focus();
 			}
+		}
+
+		private void SelectRootNodeIfAvailable(string rootPath)
+		{
+			if (string.IsNullOrWhiteSpace(rootPath))
+				return;
+
+			var treeView = folderTreeControl.TreeView;
+			if (treeView.Nodes.Count == 0)
+				return;
+
+			var rootNode = treeView.Nodes[0];
+			if (rootNode.Tag is not string tag || !string.Equals(tag, rootPath, StringComparison.OrdinalIgnoreCase))
+			{
+				rootNode = FindNodeByPath(treeView.Nodes, rootPath) ?? rootNode;
+			}
+
+			treeView.SelectedNode = rootNode;
+			rootNode.EnsureVisible();
 		}
 
 		private static TreeNode? FindNodeByPath(TreeNodeCollection nodes, string path)

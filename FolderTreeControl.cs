@@ -44,6 +44,8 @@ namespace MyFileExplorer
 		public FolderTreeControl()
 		{
 			InitializeComponent();
+			// Keep selected node visually highlighted even when focus is elsewhere (e.g. combo box).
+			folderTreeView.HideSelection = false;
 		}
 
 		/// <summary>
