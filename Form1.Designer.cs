@@ -48,7 +48,7 @@ namespace MyFileExplorer
 			Controls.Add(explorerTabControl);
 			KeyPreview = true;
 			Name = "Form1";
-			Text = AppTitle;
+			WindowState = FormWindowState.Maximized;
 			KeyDown += Form1_KeyDown;
 			ResumeLayout(false);
 		}
