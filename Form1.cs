@@ -2,6 +2,7 @@ namespace MyFileExplorer
 {
 	public partial class Form1 : Form
 	{
+		private const string AppTitle = "Developers File Explorer";
 		private readonly List<ExplorerTabSession> _tabSessions = new();
 		private ContextMenuStrip? _tabsContextMenu;
 
@@ -254,11 +255,11 @@ namespace MyFileExplorer
 			var activeSession = GetActiveSession();
 			if (activeSession == null)
 			{
-				Text = "My File Explorer";
+				Text = AppTitle;
 				return;
 			}
 
-			Text = $"{activeSession.TabPage.Text} - My File Explorer";
+			Text = $"{activeSession.TabPage.Text} - {AppTitle}";
 		}
 
 		private void SelectNextTab()

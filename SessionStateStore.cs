@@ -24,6 +24,7 @@ namespace MyFileExplorer
 		public TerminalShellType ShellType { get; set; } = TerminalShellType.PowerShell;
 		public string LastWorkingDirectory { get; set; } = string.Empty;
 		public string OutputText { get; set; } = string.Empty;
+		public Dictionary<string, List<string>> DirectoryHistory { get; set; } = new();
 	}
 
 	internal static class SessionStateStore
