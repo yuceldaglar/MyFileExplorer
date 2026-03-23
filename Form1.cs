@@ -9,7 +9,7 @@ namespace MyFileExplorer
 		{
 			InitializeComponent();
 			InitializeTabUi();
-			CreateNewTab(selectTab: true);
+			RestoreSessionOrCreateDefaultTab();
 		}
 
 		private void Form1_KeyDown(object? sender, KeyEventArgs e)
@@ -56,6 +56,8 @@ namespace MyFileExplorer
 
 		protected override void OnFormClosing(FormClosingEventArgs e)
 		{
+			SaveSessionState();
+
 			foreach (var session in _tabSessions.ToArray())
 				DisposeSession(session);
 			_tabSessions.Clear();
@@ -116,6 +118,68 @@ namespace MyFileExplorer
 			UpdateTabTitle(session);
 			UpdateWindowTitle();
 			return session;
+		}
+
+		private void RestoreSessionOrCreateDefaultTab()
+		{
+			var state = SessionStateStore.Load();
+			if (state?.Tabs == null || state.Tabs.Count == 0)
+			{
+				CreateNewTab(selectTab: true);
+				return;
+			}
+
+			foreach (var tabState in state.Tabs)
+			{
+				var session = CreateNewTab(selectTab: false);
+				try
+				{
+					session.Explorer.RestoreState(tabState);
+					UpdateTabTitle(session);
+				}
+				catch
+				{
+					// Continue restoring remaining tabs.
+				}
+			}
+
+			if (_tabSessions.Count == 0)
+			{
+				CreateNewTab(selectTab: true);
+				return;
+			}
+
+			var selectedIndex = Math.Clamp(state.SelectedTabIndex, 0, _tabSessions.Count - 1);
+			explorerTabControl.SelectedIndex = selectedIndex;
+			UpdateWindowTitle();
+		}
+
+		private void SaveSessionState()
+		{
+			if (_tabSessions.Count == 0)
+				return;
+
+			var state = new AppSessionState
+			{
+				SelectedTabIndex = Math.Max(0, explorerTabControl.SelectedIndex)
+			};
+
+			foreach (var session in _tabSessions)
+			{
+				try
+				{
+					state.Tabs.Add(session.Explorer.CaptureState());
+				}
+				catch
+				{
+					// Skip broken tab state but continue saving others.
+				}
+			}
+
+			if (state.Tabs.Count == 0)
+				return;
+
+			SessionStateStore.Save(state);
 		}
 
 		private void Explorer_CurrentPathChanged(object? sender, FolderEventArgs e)

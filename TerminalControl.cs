@@ -9,10 +9,14 @@ namespace MyFileExplorer
 	/// </summary>
 	public partial class TerminalControl : UserControl
 	{
+		private const int MaxPersistedOutputChars = 64 * 1024;
+		private readonly object _suppressedOutputLock = new();
+		private readonly List<string> _suppressedOutputFragments = new();
 		private Process? _shellProcess;
 		private StreamWriter? _shellInput;
 		private bool _suppressShellSelectionChanged;
 		private TerminalShellType _shellType = TerminalShellType.PowerShell;
+		private string _lastKnownWorkingDirectory = string.Empty;
 
 		/// <summary>
 		/// Raised when a new line of output is appended.
@@ -121,7 +125,7 @@ namespace MyFileExplorer
 			ProcessStartInfo startInfo;
 			try
 			{
-				startInfo = BuildStartInfo(_shellType);
+				startInfo = BuildStartInfo(_shellType, _lastKnownWorkingDirectory);
 			}
 			catch (Exception ex)
 			{
@@ -225,6 +229,47 @@ namespace MyFileExplorer
 		/// <param name="command">Command text to execute.</param>
 		public void SendCommand(string command)
 		{
+			SendCommand(command, echoCommand: true);
+		}
+
+		internal void SyncWorkingDirectory(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+				return;
+
+			_lastKnownWorkingDirectory = path;
+			var command = BuildSetDirectoryCommand(path);
+			SendCommand(command, echoCommand: false, suppressOutput: true);
+		}
+
+		internal TerminalState CaptureState()
+		{
+			var outputText = outputTextBox.Text ?? string.Empty;
+			if (outputText.Length > MaxPersistedOutputChars)
+				outputText = outputText[^MaxPersistedOutputChars..];
+
+			return new TerminalState
+			{
+				ShellType = _shellType,
+				LastWorkingDirectory = _lastKnownWorkingDirectory ?? string.Empty,
+				OutputText = outputText
+			};
+		}
+
+		internal void RestoreState(TerminalState? state)
+		{
+			if (state == null)
+				return;
+
+			ShellType = state.ShellType;
+			_lastKnownWorkingDirectory = NormalizePersistedDirectory(state.LastWorkingDirectory);
+			outputTextBox.Text = LimitPersistedOutput(state.OutputText);
+			outputTextBox.SelectionStart = outputTextBox.TextLength;
+			outputTextBox.ScrollToCaret();
+		}
+
+		private void SendCommand(string command, bool echoCommand, bool suppressOutput = false)
+		{
 			if (string.IsNullOrWhiteSpace(command))
 				return;
 
@@ -235,12 +280,29 @@ namespace MyFileExplorer
 				return;
 
 			var trimmedCommand = command.Trim();
-			AppendOutputLine($"> {trimmedCommand}");
+			if (IsClearCommand(trimmedCommand))
+			{
+				ClearOutput();
+				return;
+			}
+
+			if (suppressOutput)
+			{
+				lock (_suppressedOutputLock)
+				{
+					_suppressedOutputFragments.Add(trimmedCommand);
+				}
+			}
+
+			if (echoCommand)
+				AppendOutputLine($"> {trimmedCommand}");
+			TryUpdateWorkingDirectoryFromCommand(trimmedCommand);
 
 			try
 			{
 				_shellInput.WriteLine(trimmedCommand);
-				CommandSent?.Invoke(this, new TerminalCommandEventArgs(trimmedCommand));
+				if (echoCommand)
+					CommandSent?.Invoke(this, new TerminalCommandEventArgs(trimmedCommand));
 			}
 			catch (Exception ex)
 			{
@@ -273,7 +335,7 @@ namespace MyFileExplorer
 			StartShell();
 		}
 
-		private static ProcessStartInfo BuildStartInfo(TerminalShellType shellType)
+		private static ProcessStartInfo BuildStartInfo(TerminalShellType shellType, string? workingDirectory)
 		{
 			var (fileName, arguments) = shellType switch
 			{
@@ -286,6 +348,7 @@ namespace MyFileExplorer
 			{
 				FileName = fileName,
 				Arguments = arguments,
+				WorkingDirectory = ResolveWorkingDirectory(workingDirectory),
 				UseShellExecute = false,
 				CreateNoWindow = true,
 				RedirectStandardInput = true,
@@ -296,9 +359,19 @@ namespace MyFileExplorer
 			};
 		}
 
+		private static string ResolveWorkingDirectory(string? workingDirectory)
+		{
+			if (!string.IsNullOrWhiteSpace(workingDirectory) && Directory.Exists(workingDirectory))
+				return workingDirectory;
+
+			return Environment.CurrentDirectory;
+		}
+
 		private void AppendOutputLine(string line)
 		{
 			if (IsDisposed)
+				return;
+			if (ShouldSuppressOutputLine(line))
 				return;
 
 			if (outputTextBox.InvokeRequired)
@@ -311,6 +384,29 @@ namespace MyFileExplorer
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
 			outputTextBox.ScrollToCaret();
 			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line));
+		}
+
+		private bool ShouldSuppressOutputLine(string line)
+		{
+			if (string.IsNullOrWhiteSpace(line))
+				return false;
+
+			lock (_suppressedOutputLock)
+			{
+				for (var i = 0; i < _suppressedOutputFragments.Count; i++)
+				{
+					var fragment = _suppressedOutputFragments[i];
+					if (string.IsNullOrWhiteSpace(fragment))
+						continue;
+					if (!line.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+						continue;
+
+					_suppressedOutputFragments.RemoveAt(i);
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		private bool IsInDesignMode() => DesignMode || LicenseManager.UsageMode == LicenseUsageMode.Designtime;
@@ -342,6 +438,15 @@ namespace MyFileExplorer
 
 		private void CommandTextBox_KeyDown(object? sender, KeyEventArgs e)
 		{
+			if (e.Control && e.KeyCode == Keys.L)
+			{
+				e.Handled = true;
+				e.SuppressKeyPress = true;
+				ClearOutput();
+				FocusCommandInput();
+				return;
+			}
+
 			if (e.KeyCode != Keys.Enter)
 				return;
 
@@ -385,6 +490,88 @@ namespace MyFileExplorer
 			AppendOutputLine($"[{_shellType}] session exited.");
 			ShellExited?.Invoke(this, EventArgs.Empty);
 			UpdateStartStopButtonText();
+		}
+
+		private static string LimitPersistedOutput(string output)
+		{
+			if (string.IsNullOrEmpty(output))
+				return string.Empty;
+			return output.Length <= MaxPersistedOutputChars
+				? output
+				: output[^MaxPersistedOutputChars..];
+		}
+
+		private static string NormalizePersistedDirectory(string? path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+				return string.Empty;
+			return Directory.Exists(path) ? path : string.Empty;
+		}
+
+		private void TryUpdateWorkingDirectoryFromCommand(string command)
+		{
+			if (string.IsNullOrWhiteSpace(command))
+				return;
+
+			if (_shellType == TerminalShellType.PowerShell)
+			{
+				if (TryExtractPowerShellLocation(command, out var path))
+					_lastKnownWorkingDirectory = path;
+				return;
+			}
+
+			if (TryExtractCmdLocation(command, out var cmdPath))
+				_lastKnownWorkingDirectory = cmdPath;
+		}
+
+		private static bool TryExtractPowerShellLocation(string command, out string path)
+		{
+			path = string.Empty;
+			const string prefix = "Set-Location -LiteralPath '";
+			if (!command.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !command.EndsWith('\''))
+				return false;
+
+			var content = command[prefix.Length..^1];
+			content = content.Replace("''", "'", StringComparison.Ordinal);
+			if (!Directory.Exists(content))
+				return false;
+
+			path = content;
+			return true;
+		}
+
+		private static bool TryExtractCmdLocation(string command, out string path)
+		{
+			path = string.Empty;
+			const string prefix = "cd /d \"";
+			if (!command.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || !command.EndsWith('"'))
+				return false;
+
+			var content = command[prefix.Length..^1];
+			content = content.Replace("\"\"", "\"", StringComparison.Ordinal);
+			if (!Directory.Exists(content))
+				return false;
+
+			path = content;
+			return true;
+		}
+
+		private string BuildSetDirectoryCommand(string path)
+		{
+			if (_shellType == TerminalShellType.PowerShell)
+			{
+				var escaped = path.Replace("'", "''", StringComparison.Ordinal);
+				return $"Set-Location -LiteralPath '{escaped}'";
+			}
+
+			var cmdEscaped = path.Replace("\"", "\"\"", StringComparison.Ordinal);
+			return $"cd /d \"{cmdEscaped}\"";
+		}
+
+		private static bool IsClearCommand(string command)
+		{
+			return string.Equals(command, "clear", StringComparison.OrdinalIgnoreCase)
+				|| string.Equals(command, "cls", StringComparison.OrdinalIgnoreCase);
 		}
 
 		private void FocusCommandInput()

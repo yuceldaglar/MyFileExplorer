@@ -7,6 +7,8 @@ namespace MyFileExplorer
 	/// </summary>
 	public partial class ExplorerLayoutControl : UserControl
 	{
+		private bool _isRestoringState;
+
 		/// <summary>
 		/// Raised when the current folder path shown by this explorer instance changes.
 		/// </summary>
@@ -77,7 +79,8 @@ namespace MyFileExplorer
 		private void FolderTreeControl_FolderSelected(object? sender, FolderEventArgs e)
 		{
 			folderContentsControl.CurrentPath = e.FolderPath;
-			SyncTerminalDirectory(e.FolderPath);
+			if (!_isRestoringState)
+				SyncTerminalDirectory(e.FolderPath);
 			OnCurrentPathChanged(e.FolderPath);
 		}
 
@@ -93,8 +96,7 @@ namespace MyFileExplorer
 			folderContentsControl.CurrentPath = e.FolderPath;
 			SyncTerminalDirectory(e.FolderPath);
 			OnCurrentPathChanged(e.FolderPath);
-			var path = e.FolderPath;
-			BeginInvoke(() => SelectFolderInTree(path));
+			RequestSelectFolderInTree(e.FolderPath);
 		}
 
 		/// <summary>
@@ -106,22 +108,51 @@ namespace MyFileExplorer
 			folderTreeControl.RefreshTree();
 		}
 
-		private void SyncTerminalDirectory(string selectedPath)
+		internal ExplorerTabState CaptureState()
 		{
-			if (string.IsNullOrWhiteSpace(selectedPath) || !Directory.Exists(selectedPath))
+			return new ExplorerTabState
+			{
+				CurrentPath = CurrentPath ?? string.Empty,
+				TreeSelectedPath = folderTreeControl.SelectedFolderPath ?? string.Empty,
+				MainSplitterDistance = splitContainer.SplitterDistance,
+				MainSplitterRatio = GetSplitterRatio(splitContainer),
+				TerminalSplitterDistance = outerSplitContainer.SplitterDistance,
+				TerminalSplitterRatio = GetSplitterRatio(outerSplitContainer),
+				Terminal = terminalControl.CaptureState()
+			};
+		}
+
+		internal void RestoreState(ExplorerTabState? state)
+		{
+			if (state == null)
 				return;
 
-			// Keep terminal location aligned with active explorer navigation source.
-			if (terminalControl.ShellType == TerminalShellType.PowerShell)
+			ApplySplitterStateSafe(splitContainer, state.MainSplitterDistance, state.MainSplitterRatio);
+			ApplySplitterStateSafe(outerSplitContainer, state.TerminalSplitterDistance, state.TerminalSplitterRatio);
+
+			var treeSelectedPath = state.TreeSelectedPath?.Trim() ?? string.Empty;
+			var currentPath = state.CurrentPath?.Trim() ?? string.Empty;
+			var restorePath = !string.IsNullOrWhiteSpace(treeSelectedPath) && Directory.Exists(treeSelectedPath)
+				? treeSelectedPath
+				: (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath) ? currentPath : string.Empty);
+
+			try
 			{
-				var escapedPath = selectedPath.Replace("'", "''", StringComparison.Ordinal);
-				terminalControl.SendCommand($"Set-Location -LiteralPath '{escapedPath}'");
+				_isRestoringState = true;
+				if (!string.IsNullOrWhiteSpace(restorePath))
+					RestorePath(restorePath);
+
+				terminalControl.RestoreState(state.Terminal);
 			}
-			else
+			finally
 			{
-				var escapedPath = selectedPath.Replace("\"", "\"\"", StringComparison.Ordinal);
-				terminalControl.SendCommand($"cd /d \"{escapedPath}\"");
+				_isRestoringState = false;
 			}
+		}
+
+		private void SyncTerminalDirectory(string selectedPath)
+		{
+			terminalControl.SyncWorkingDirectory(selectedPath);
 		}
 
 		private void SelectFolderInTree(string path)
@@ -140,6 +171,90 @@ namespace MyFileExplorer
 				node.EnsureVisible();
 				treeView.Focus();
 			}
+		}
+
+		private void RestorePath(string path)
+		{
+			var savedRoot = Program.SavedPathItems
+				.Where(x => !string.IsNullOrWhiteSpace(x.Path) && path.StartsWith(x.Path, StringComparison.OrdinalIgnoreCase))
+				.OrderByDescending(x => x.Path.Length)
+				.FirstOrDefault();
+
+			if (savedRoot != null)
+			{
+				pathItemComboBox.SelectedItem = savedRoot;
+				folderContentsControl.CurrentPath = path;
+				OnCurrentPathChanged(path);
+				SelectFolderInTree(path);
+				return;
+			}
+
+			folderTreeControl.RootPath = path;
+			folderContentsControl.CurrentPath = path;
+			OnCurrentPathChanged(path);
+			SelectFolderInTree(path);
+		}
+
+		private void RequestSelectFolderInTree(string path)
+		{
+			if (string.IsNullOrWhiteSpace(path) || IsDisposed)
+				return;
+
+			if (IsHandleCreated)
+			{
+				BeginInvoke(() => SelectFolderInTree(path));
+				return;
+			}
+
+			SelectFolderInTree(path);
+		}
+
+		private static void ApplySplitterStateSafe(SplitContainer container, int requestedDistance, double requestedRatio)
+		{
+			void Apply()
+			{
+				var available = GetSplitterSpan(container);
+				if (available <= 0)
+					return;
+
+				var requested = requestedDistance;
+				if (requestedRatio > 0 && requestedRatio < 1)
+					requested = (int)Math.Round(available * requestedRatio, MidpointRounding.AwayFromZero);
+				else if (requested <= 0)
+					return;
+
+				var min = container.Panel1MinSize;
+				var max = Math.Max(min, available - container.Panel2MinSize);
+				var bounded = Math.Min(Math.Max(requested, min), max);
+				if (bounded > 0)
+					container.SplitterDistance = bounded;
+			}
+
+			if (!container.IsHandleCreated)
+			{
+				container.HandleCreated += (_, _) => Apply();
+				return;
+			}
+
+			Apply();
+			if (!container.IsDisposed)
+				container.BeginInvoke(new MethodInvoker(Apply));
+		}
+
+		private static int GetSplitterSpan(SplitContainer container)
+		{
+			return container.Orientation == Orientation.Vertical
+				? container.Width - container.SplitterWidth
+				: container.Height - container.SplitterWidth;
+		}
+
+		private static double GetSplitterRatio(SplitContainer container)
+		{
+			var span = GetSplitterSpan(container);
+			if (span <= 0)
+				return 0;
+
+			return Math.Clamp(container.SplitterDistance / (double)span, 0d, 1d);
 		}
 
 		private void SelectRootNodeIfAvailable(string rootPath)

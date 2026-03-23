@@ -15,6 +15,9 @@ namespace MyFileExplorer
 		[Browsable(false)]
 		public TreeView TreeView => folderTreeView;
 
+		[Browsable(false)]
+		public string? SelectedFolderPath => GetSelectedFolderPath();
+
 		/// <summary>
 		/// Occurs when a folder is selected in the tree (e.g. user clicks a node). Event args contain the folder path.
 		/// </summary>
