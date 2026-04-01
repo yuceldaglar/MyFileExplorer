@@ -159,12 +159,15 @@ namespace MyFileExplorer
 		{
 			if (string.IsNullOrWhiteSpace(path))
 				return;
-			path = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			path = NormalizePath(path);
 			var treeView = folderTreeControl.TreeView;
-			var rootPath = folderTreeControl.RootPath?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+			var rootPath = NormalizePath(folderTreeControl.RootPath);
 			if (string.IsNullOrEmpty(rootPath) || !path.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
 				return; // path not under current tree root
-			var node = FindNodeByPath(treeView.Nodes, path);
+			var rootNode = FindNodeByPath(treeView.Nodes, rootPath);
+			if (rootNode == null)
+				return;
+			var node = FindNodeByPathAlongBranch(rootNode, path);
 			if (node != null)
 			{
 				treeView.SelectedNode = node;
@@ -261,6 +264,7 @@ namespace MyFileExplorer
 		{
 			if (string.IsNullOrWhiteSpace(rootPath))
 				return;
+			rootPath = NormalizePath(rootPath);
 
 			var treeView = folderTreeControl.TreeView;
 			if (treeView.Nodes.Count == 0)
@@ -278,21 +282,99 @@ namespace MyFileExplorer
 
 		private static TreeNode? FindNodeByPath(TreeNodeCollection nodes, string path)
 		{
+			path = NormalizePath(path);
 			foreach (TreeNode node in nodes)
 			{
 				if (node.Tag is not string tag)
 					continue;
 				if (tag == "__unloaded__")
 					continue; // placeholder node, skip
+				tag = NormalizePath(tag);
 				if (string.Equals(tag, path, StringComparison.OrdinalIgnoreCase))
 					return node;
-				if (node.Nodes.Count > 0 && !node.IsExpanded)
-					node.Expand();
 				var found = FindNodeByPath(node.Nodes, path);
 				if (found != null)
 					return found;
 			}
 			return null;
+		}
+
+		private static TreeNode? FindNodeByPathAlongBranch(TreeNode rootNode, string targetPath)
+		{
+			targetPath = NormalizePath(targetPath);
+			if (rootNode.Tag is not string rootTag)
+				return null;
+
+			rootTag = NormalizePath(rootTag);
+			if (!IsSameOrParentPath(rootTag, targetPath))
+				return null;
+
+			var current = rootNode;
+			var currentPath = rootTag;
+			while (!string.Equals(currentPath, targetPath, StringComparison.OrdinalIgnoreCase))
+			{
+				EnsureChildrenLoaded(current);
+
+				TreeNode? next = null;
+				var nextLength = -1;
+				foreach (TreeNode child in current.Nodes)
+				{
+					if (child.Tag is not string childTag || childTag == "__unloaded__")
+						continue;
+
+					var childPath = NormalizePath(childTag);
+					if (!IsSameOrParentPath(childPath, targetPath))
+						continue;
+
+					if (childPath.Length > nextLength)
+					{
+						next = child;
+						nextLength = childPath.Length;
+					}
+				}
+
+				if (next?.Tag is not string nextTag)
+					return null;
+
+				var nextPath = NormalizePath(nextTag);
+				if (string.Equals(nextPath, currentPath, StringComparison.OrdinalIgnoreCase))
+					return null;
+
+				current = next;
+				currentPath = nextPath;
+			}
+
+			return current;
+		}
+
+		private static void EnsureChildrenLoaded(TreeNode node)
+		{
+			if (node.Nodes.Count == 1 && node.Nodes[0].Tag is string marker && marker == "__unloaded__")
+				node.Expand();
+		}
+
+		private static bool IsSameOrParentPath(string parentPath, string childPath)
+		{
+			parentPath = NormalizePath(parentPath);
+			childPath = NormalizePath(childPath);
+			if (string.Equals(parentPath, childPath, StringComparison.OrdinalIgnoreCase))
+				return true;
+
+			if (childPath.Length <= parentPath.Length)
+				return false;
+
+			if (!childPath.StartsWith(parentPath, StringComparison.OrdinalIgnoreCase))
+				return false;
+
+			var separator = childPath[parentPath.Length];
+			return separator == Path.DirectorySeparatorChar || separator == Path.AltDirectorySeparatorChar;
+		}
+
+		private static string NormalizePath(string? path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+				return string.Empty;
+			return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		}
 
 		private void OnCurrentPathChanged(string path)

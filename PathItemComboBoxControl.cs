@@ -25,6 +25,7 @@ namespace MyFileExplorer
 			set
 			{
 				var list = value?.ToList() ?? new List<PathItem>();
+				AppendDrivesAtEnd(list);
 				comboBox.DataSource = null;
 				comboBox.DisplayMember = nameof(PathItem.Name);
 				comboBox.ValueMember = nameof(PathItem.Path);
@@ -83,6 +84,25 @@ namespace MyFileExplorer
 		public PathItemComboBoxControl()
 		{
 			InitializeComponent();
+		}
+
+		private static void AppendDrivesAtEnd(List<PathItem> items)
+		{
+			var existingPaths = new HashSet<string>(
+				items
+					.Where(item => !string.IsNullOrWhiteSpace(item.Path))
+					.Select(item => item.Path),
+				StringComparer.OrdinalIgnoreCase);
+
+			foreach (var drive in DriveInfo.GetDrives().OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+			{
+				var drivePath = drive.Name;
+				if (existingPaths.Contains(drivePath))
+					continue;
+
+				items.Add(new PathItem(drivePath, drivePath));
+				existingPaths.Add(drivePath);
+			}
 		}
 
 		private void ComboBox_SelectedIndexChanged(object? sender, EventArgs e)
