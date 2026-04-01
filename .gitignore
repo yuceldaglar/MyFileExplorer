@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Local machine build/deploy helpers (do not commit)
+Directory.Build.targets.local
+.local/

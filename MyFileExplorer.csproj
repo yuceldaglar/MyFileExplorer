@@ -14,4 +14,6 @@
     </None>
   </ItemGroup>
 
+  <Import Project="Directory.Build.targets.local" Condition="Exists('Directory.Build.targets.local')" />
+
 </Project>

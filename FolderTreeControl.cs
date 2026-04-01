@@ -136,12 +136,120 @@ namespace MyFileExplorer
 			LoadRoot();
 		}
 
+		private void RefreshTree(string? preferredSelectedPath)
+		{
+			RefreshTree();
+			SelectPath(preferredSelectedPath);
+		}
+
 		private string? GetSelectedFolderPath()
 		{
 			var node = folderTreeView.SelectedNode;
 			if (node?.Tag is not string path || path == UnloadedMarker)
 				return null;
 			return path;
+		}
+
+		private void SelectPath(string? targetPath)
+		{
+			if (string.IsNullOrWhiteSpace(targetPath) || folderTreeView.Nodes.Count == 0)
+				return;
+
+			var normalizedTarget = NormalizePath(targetPath);
+			var rootNode = folderTreeView.Nodes[0];
+			if (rootNode.Tag is not string rootTag)
+				return;
+
+			var normalizedRoot = NormalizePath(rootTag);
+			if (!IsSameOrParentPath(normalizedRoot, normalizedTarget))
+				normalizedTarget = normalizedRoot;
+
+			var nodeToSelect = FindNodeByPathAlongBranch(rootNode, normalizedTarget);
+			if (nodeToSelect == null)
+				return;
+
+			folderTreeView.SelectedNode = nodeToSelect;
+			nodeToSelect.EnsureVisible();
+		}
+
+		private TreeNode? FindNodeByPathAlongBranch(TreeNode rootNode, string targetPath)
+		{
+			if (rootNode.Tag is not string rootTag)
+				return null;
+
+			var current = rootNode;
+			var currentPath = NormalizePath(rootTag);
+			targetPath = NormalizePath(targetPath);
+			if (!IsSameOrParentPath(currentPath, targetPath))
+				return null;
+
+			while (!string.Equals(currentPath, targetPath, StringComparison.OrdinalIgnoreCase))
+			{
+				EnsureChildrenLoaded(current);
+
+				TreeNode? next = null;
+				var nextLength = -1;
+				foreach (TreeNode child in current.Nodes)
+				{
+					if (child.Tag is not string childTag || childTag == UnloadedMarker)
+						continue;
+
+					var childPath = NormalizePath(childTag);
+					if (!IsSameOrParentPath(childPath, targetPath))
+						continue;
+
+					if (childPath.Length > nextLength)
+					{
+						next = child;
+						nextLength = childPath.Length;
+					}
+				}
+
+				if (next?.Tag is not string nextTag)
+					return current; // closest loaded/available parent
+
+				var nextPath = NormalizePath(nextTag);
+				if (string.Equals(nextPath, currentPath, StringComparison.OrdinalIgnoreCase))
+					return current;
+
+				current = next;
+				currentPath = nextPath;
+			}
+
+			return current;
+		}
+
+		private void EnsureChildrenLoaded(TreeNode node)
+		{
+			if (node.Nodes.Count == 1 && node.Nodes[0].Tag is string marker && marker == UnloadedMarker)
+				LoadSubfolders(node);
+		}
+
+		private static bool IsSameOrParentPath(string? parentPath, string? childPath)
+		{
+			var normalizedParent = NormalizePath(parentPath);
+			var normalizedChild = NormalizePath(childPath);
+			if (string.IsNullOrWhiteSpace(normalizedParent) || string.IsNullOrWhiteSpace(normalizedChild))
+				return false;
+
+			if (string.Equals(normalizedParent, normalizedChild, StringComparison.OrdinalIgnoreCase))
+				return true;
+
+			if (normalizedChild.Length <= normalizedParent.Length)
+				return false;
+
+			if (!normalizedChild.StartsWith(normalizedParent, StringComparison.OrdinalIgnoreCase))
+				return false;
+
+			var separator = normalizedChild[normalizedParent.Length];
+			return separator == Path.DirectorySeparatorChar || separator == Path.AltDirectorySeparatorChar;
+		}
+
+		private static string NormalizePath(string? path)
+		{
+			if (string.IsNullOrWhiteSpace(path))
+				return string.Empty;
+			return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 		}
 
 		private void TreeContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -240,12 +348,25 @@ namespace MyFileExplorer
 
 		private void TreeDelete_Click(object? sender, EventArgs e)
 		{
-			var path = GetSelectedFolderPath();
-			if (string.IsNullOrEmpty(path))
+			var selectedNode = folderTreeView.SelectedNode;
+			if (selectedNode?.Tag is not string path || path == UnloadedMarker)
 				return;
+
+			var parentNode = selectedNode.Parent;
+			var rootCollection = folderTreeView.Nodes;
 			FileClipboard.Clear();
 			if (FileOperations.RecycleBinDelete(path))
-				RefreshTree();
+			{
+				if (parentNode != null)
+				{
+					parentNode.Nodes.Remove(selectedNode);
+					folderTreeView.SelectedNode = parentNode;
+					parentNode.EnsureVisible();
+					return;
+				}
+
+				rootCollection.Remove(selectedNode);
+			}
 		}
 
 		private void TreeProperties_Click(object? sender, EventArgs e)
