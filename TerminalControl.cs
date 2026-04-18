@@ -275,7 +275,9 @@ namespace MyFileExplorer
 			_lastKnownWorkingDirectory = NormalizePersistedDirectory(state.LastWorkingDirectory);
 			outputTextBox.Text = LimitPersistedOutput(state.OutputText);
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
+			outputTextBox.SelectionLength = 0;
 			ScrollOutputRichTextToBottom();
+			outputTextBox.SuppressCaret();
 			RestoreDirectoryHistory(state.DirectoryHistory);
 			ResetHistoryNavigation();
 		}
@@ -323,7 +325,11 @@ namespace MyFileExplorer
 			}
 		}
 
-		public void ClearOutput() => outputTextBox.Clear();
+		public void ClearOutput()
+		{
+			outputTextBox.Clear();
+			outputTextBox.SuppressCaret();
+		}
 
 		private void PopulateShellCombo()
 		{
@@ -393,9 +399,11 @@ namespace MyFileExplorer
 				return;
 			}
 
-			outputTextBox.AppendText(line + Environment.NewLine);
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
+			outputTextBox.SelectionLength = 0;
+			outputTextBox.AppendText(line + Environment.NewLine);
 			ScrollOutputRichTextToBottom();
+			outputTextBox.SuppressCaret();
 			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line));
 		}
 
