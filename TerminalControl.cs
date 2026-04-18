@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace MyFileExplorer
@@ -274,7 +275,7 @@ namespace MyFileExplorer
 			_lastKnownWorkingDirectory = NormalizePersistedDirectory(state.LastWorkingDirectory);
 			outputTextBox.Text = LimitPersistedOutput(state.OutputText);
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
-			outputTextBox.ScrollToCaret();
+			ScrollOutputRichTextToBottom();
 			RestoreDirectoryHistory(state.DirectoryHistory);
 			ResetHistoryNavigation();
 		}
@@ -394,7 +395,7 @@ namespace MyFileExplorer
 
 			outputTextBox.AppendText(line + Environment.NewLine);
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
-			outputTextBox.ScrollToCaret();
+			ScrollOutputRichTextToBottom();
 			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line));
 		}
 
@@ -815,6 +816,19 @@ namespace MyFileExplorer
 			commandTextBox.SelectionStart = commandTextBox.TextLength;
 			commandTextBox.SelectionLength = 0;
 		}
+
+		private void ScrollOutputRichTextToBottom()
+		{
+			if (!outputTextBox.IsHandleCreated)
+				return;
+			_ = SendMessageW(outputTextBox.Handle, WM_VSCROLL, (IntPtr)SB_BOTTOM, IntPtr.Zero);
+		}
+
+		private const int WM_VSCROLL = 0x0115;
+		private const int SB_BOTTOM = 7;
+
+		[DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = CharSet.Unicode)]
+		private static extern IntPtr SendMessageW(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 	}
 
 	/// <summary>

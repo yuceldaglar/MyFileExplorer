@@ -22,7 +22,7 @@ namespace MyFileExplorer
 			startStopButton = new Button();
 			shellComboBox = new ComboBox();
 			shellLabel = new Label();
-			outputTextBox = new RichTextBox();
+			outputTextBox = new TerminalOutputRichTextBox();
 			commandTextBox = new TextBox();
 			topPanel.SuspendLayout();
 			SuspendLayout();
@@ -90,9 +90,11 @@ namespace MyFileExplorer
 			outputTextBox.BorderStyle = BorderStyle.None;
 			outputTextBox.Dock = DockStyle.Fill;
 			outputTextBox.ForeColor = Color.Gainsboro;
+			outputTextBox.HideSelection = true;
 			outputTextBox.Location = new Point(0, 40);
 			outputTextBox.Name = "outputTextBox";
 			outputTextBox.ReadOnly = true;
+			outputTextBox.TabStop = false;
 			outputTextBox.Size = new Size(500, 220);
 			outputTextBox.TabIndex = 1;
 			outputTextBox.Text = "";
@@ -128,7 +130,7 @@ namespace MyFileExplorer
 		private ComboBox shellComboBox;
 		private Button startStopButton;
 		private Button clearButton;
-		private RichTextBox outputTextBox;
+		private TerminalOutputRichTextBox outputTextBox;
 		private TextBox commandTextBox;
 	}
 }
