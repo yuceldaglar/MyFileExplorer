@@ -22,7 +22,7 @@ namespace MyFileExplorer
 			startStopButton = new Button();
 			shellComboBox = new ComboBox();
 			shellLabel = new Label();
-			outputTextBox = new TerminalOutputTextBox();
+			outputListBox = new TerminalOutputListBox();
 			commandTextBox = new TextBox();
 			topPanel.SuspendLayout();
 			SuspendLayout();
@@ -84,24 +84,17 @@ namespace MyFileExplorer
 			shellLabel.TabIndex = 0;
 			shellLabel.Text = "Shell:";
 			// 
-			// outputTextBox
+			// outputListBox
 			// 
-			outputTextBox.BackColor = Color.Black;
-			outputTextBox.BorderStyle = BorderStyle.None;
-			outputTextBox.Dock = DockStyle.Fill;
-			outputTextBox.ForeColor = Color.Gainsboro;
-			outputTextBox.HideSelection = true;
-			outputTextBox.Location = new Point(0, 40);
-			outputTextBox.Multiline = true;
-			outputTextBox.Name = "outputTextBox";
-			outputTextBox.ReadOnly = true;
-			outputTextBox.ScrollBars = ScrollBars.Both;
-			outputTextBox.TabStop = false;
-			outputTextBox.WordWrap = false;
-			outputTextBox.Size = new Size(500, 220);
-			outputTextBox.TabIndex = 1;
-			outputTextBox.Text = "";
-			outputTextBox.MouseDown += OutputTextBox_MouseDown;
+			outputListBox.BackColor = Color.Black;
+			outputListBox.BorderStyle = BorderStyle.None;
+			outputListBox.Dock = DockStyle.Fill;
+			outputListBox.ForeColor = Color.Gainsboro;
+			outputListBox.Location = new Point(0, 40);
+			outputListBox.Name = "outputListBox";
+			outputListBox.Size = new Size(500, 220);
+			outputListBox.TabIndex = 1;
+			outputListBox.MouseDown += OutputListBox_MouseDown;
 			// 
 			// commandTextBox
 			// 
@@ -115,7 +108,7 @@ namespace MyFileExplorer
 			// TerminalControl
 			// 
 			AutoScaleMode = AutoScaleMode.Inherit;
-			Controls.Add(outputTextBox);
+			Controls.Add(outputListBox);
 			Controls.Add(commandTextBox);
 			Controls.Add(topPanel);
 			Name = "TerminalControl";
@@ -133,7 +126,7 @@ namespace MyFileExplorer
 		private ComboBox shellComboBox;
 		private Button startStopButton;
 		private Button clearButton;
-		private TerminalOutputTextBox outputTextBox;
+		private TerminalOutputListBox outputListBox;
 		private TextBox commandTextBox;
 	}
 }

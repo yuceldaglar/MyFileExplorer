@@ -89,7 +89,7 @@ namespace MyFileExplorer
 			}
 		}
 
-		public static void FocusSnapshot(string where, Control terminal, TextBox output, TextBox command)
+		public static void FocusSnapshot(string where, Control terminal, Control output, TextBox command)
 		{
 			Form? form = null;
 			try

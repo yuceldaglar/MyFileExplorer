@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Text;
 
 namespace MyFileExplorer
@@ -24,6 +23,7 @@ namespace MyFileExplorer
 		public static string? TerminalDiagnosticLogFilePath => TerminalDiagnosticLog.FilePath;
 
 		private const int MaxPersistedOutputChars = 64 * 1024;
+		private const int MaxRuntimeOutputChars = 16 * 1024 * 1024;
 		private const int MaxHistoryEntriesPerDirectory = 100;
 		private const int MaxHistoryDirectories = 200;
 		private const string DefaultHistoryDirectoryKey = "__default__";
@@ -39,6 +39,9 @@ namespace MyFileExplorer
 		private string _historyDraftInput = string.Empty;
 		private string _historyContextKey = DefaultHistoryDirectoryKey;
 		private int _diagnosticAppendLineCount;
+		private bool _pendingFocusCommandInput;
+		private int _runtimeOutputCharEstimate;
+		private int _outputLineMaxPixelWidth;
 
 		/// <summary>
 		/// Raised when a new line of output is appended.
@@ -62,10 +65,10 @@ namespace MyFileExplorer
 		public event EventHandler? ShellExited;
 
 		/// <summary>
-		/// Gets the read-only output text box (multiline log; <see cref="TerminalOutputTextBox"/> is non-selectable and collapses EOF selection so no caret draws over the stream).
+		/// Gets the read-only output log (<see cref="TerminalOutputListBox"/>): one shell line per item, not an Edit control, so no insertion caret appears over the stream.
 		/// </summary>
 		[Browsable(false)]
-		public TextBox OutputTextBox => outputTextBox;
+		public ListBox OutputListBox => outputListBox;
 
 		/// <summary>
 		/// Gets the command input text box.
@@ -112,16 +115,19 @@ namespace MyFileExplorer
 			InitializeComponent();
 			TerminalDiagnosticLog.Line("Init",
 				$"TerminalControl ctor; diagnostic file={TerminalDiagnosticLog.FilePath ?? "(none)"}");
-			outputTextBox.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point);
-			// Allow large session logs; user input is still blocked by ReadOnly.
-			outputTextBox.MaxLength = 16 * 1024 * 1024;
-			outputTextBox.GotFocus += OutputTextBox_GotFocus;
-			outputTextBox.LostFocus += (_, _) =>
-				TerminalDiagnosticLog.Line("output.LostFocus(ev)", "LostFocus event on output TextBox");
+			outputListBox.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point);
+			outputListBox.GotFocus += OutputListBox_GotFocus;
+			outputListBox.LostFocus += (_, _) =>
+				TerminalDiagnosticLog.Line("output.LostFocus(ev)", "LostFocus event on output ListBox");
 			commandTextBox.GotFocus += (_, _) =>
-				TerminalDiagnosticLog.FocusSnapshot("command.GotFocus(ev)", this, outputTextBox, commandTextBox);
+				TerminalDiagnosticLog.FocusSnapshot("command.GotFocus(ev)", this, outputListBox, commandTextBox);
 			commandTextBox.LostFocus += (_, _) =>
 				TerminalDiagnosticLog.Line("command.LostFocus(ev)", "LostFocus event on command TextBox");
+			commandTextBox.HandleCreated += (_, _) =>
+			{
+				TerminalDiagnosticLog.Line("command.HandleCreated", $"Handle={commandTextBox.Handle}");
+				FlushPendingFocusCommandInput("command.HandleCreated");
+			};
 			PopulateShellCombo();
 			UpdateStartStopButtonText();
 		}
@@ -139,6 +145,7 @@ namespace MyFileExplorer
 			base.OnHandleCreated(e);
 			TerminalDiagnosticLog.Line("TerminalControl.OnHandleCreated",
 				$"DesignMode={IsInDesignMode()} AutoStartShell={AutoStartShell} Handle={Handle}");
+			FlushPendingFocusCommandInput("TerminalControl.OnHandleCreated");
 			if (IsInDesignMode())
 				return;
 			if (AutoStartShell)
@@ -294,7 +301,7 @@ namespace MyFileExplorer
 
 		internal TerminalState CaptureState()
 		{
-			var outputText = outputTextBox.Text ?? string.Empty;
+			var outputText = JoinOutputListLines();
 			TerminalDiagnosticLog.Line("CaptureState", $"raw outputLen={outputText.Length}");
 			if (outputText.Length > MaxPersistedOutputChars)
 				outputText = outputText[^MaxPersistedOutputChars..];
@@ -320,11 +327,10 @@ namespace MyFileExplorer
 				$"ShellType={state.ShellType} outputLen={state.OutputText?.Length ?? 0} cwdLen={state.LastWorkingDirectory?.Length ?? 0}");
 			ShellType = state.ShellType;
 			_lastKnownWorkingDirectory = NormalizePersistedDirectory(state.LastWorkingDirectory);
-			outputTextBox.Text = LimitPersistedOutput(state.OutputText ?? string.Empty);
-			CollapseOutputSelectionToHideInsertionCaret();
-			ScrollOutputToBottom();
+			PopulateOutputListFromText(LimitPersistedOutput(state.OutputText ?? string.Empty));
 			RestoreDirectoryHistory(state.DirectoryHistory);
 			ResetHistoryNavigation();
+			ScheduleFocusCommandInput();
 		}
 
 		private void SendCommand(string command, bool echoCommand, bool suppressOutput = false)
@@ -381,8 +387,11 @@ namespace MyFileExplorer
 
 		public void ClearOutput()
 		{
-			TerminalDiagnosticLog.Line("ClearOutput", $"before clear outputLen={outputTextBox.TextLength}");
-			outputTextBox.Clear();
+			TerminalDiagnosticLog.Line("ClearOutput", $"before clear items={outputListBox.Items.Count} estChars={_runtimeOutputCharEstimate}");
+			outputListBox.Items.Clear();
+			_runtimeOutputCharEstimate = 0;
+			_outputLineMaxPixelWidth = 0;
+			outputListBox.HorizontalExtent = 0;
 			TerminalDiagnosticLog.Line("ClearOutput", "after clear");
 		}
 
@@ -457,30 +466,31 @@ namespace MyFileExplorer
 				return;
 			}
 
-			if (outputTextBox.InvokeRequired)
+			if (outputListBox.InvokeRequired)
 			{
 				TerminalDiagnosticLog.Line("AppendOutputLine",
 					$"BeginInvoke marshal len={line?.Length ?? 0} preview={TerminalDiagnosticLog.SafePreview(line, 100)}");
-				outputTextBox.BeginInvoke(new Action<string>(AppendOutputLine), line);
+				outputListBox.BeginInvoke(new Action<string>(AppendOutputLine), line);
 				return;
 			}
 
-			var beforeLen = outputTextBox.TextLength;
+			var beforeCount = outputListBox.Items.Count;
 			_diagnosticAppendLineCount++;
 			var previewNote = _diagnosticAppendLineCount <= 400
 				? TerminalDiagnosticLog.SafePreview(line, 120)
 				: $"(preview omitted after 400 lines; n={_diagnosticAppendLineCount})";
 			TerminalDiagnosticLog.Line("AppendOutputLine",
-				$"UI beforeLen={beforeLen} lineLen={line?.Length ?? 0} n={_diagnosticAppendLineCount} preview={previewNote}");
+				$"UI beforeItems={beforeCount} lineLen={line?.Length ?? 0} n={_diagnosticAppendLineCount} preview={previewNote}");
 
-			outputTextBox.SelectionStart = outputTextBox.TextLength;
-			outputTextBox.SelectionLength = 0;
-			outputTextBox.AppendText(line + Environment.NewLine);
-			CollapseOutputSelectionToHideInsertionCaret();
-			ScrollOutputToBottom();
+			var normalized = line ?? string.Empty;
+			outputListBox.Items.Add(normalized);
+			_runtimeOutputCharEstimate += normalized.Length + Environment.NewLine.Length;
+			TrimOutputHeadIfOverBudget();
+			UpdateOutputHorizontalExtentForLine(normalized);
+			ScrollOutputListToBottom();
 			TerminalDiagnosticLog.Line("AppendOutputLine",
-				$"after textLen={outputTextBox.TextLength} selStart={outputTextBox.SelectionStart} selLen={outputTextBox.SelectionLength}");
-			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line ?? string.Empty));
+				$"after items={outputListBox.Items.Count} estChars={_runtimeOutputCharEstimate}");
+			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(normalized));
 		}
 
 		private bool ShouldSuppressOutputLine(string line)
@@ -588,20 +598,19 @@ namespace MyFileExplorer
 		/// the input: Windows delivers character messages only to the HWND with keyboard focus; if the log had
 		/// focus, typed input would stay in the read-only Edit (often a beep), not in the command box.
 		/// </summary>
-		private void OutputTextBox_MouseDown(object? sender, MouseEventArgs e)
+		private void OutputListBox_MouseDown(object? sender, MouseEventArgs e)
 		{
 			TerminalDiagnosticLog.Line("output.MouseDown",
 				$"Button={e.Button} Clicks={e.Clicks} ({e.X},{e.Y}) -> FocusCommandInput");
-			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.before", this, outputTextBox, commandTextBox);
+			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.before", this, outputListBox, commandTextBox);
 			ScheduleFocusCommandInput();
-			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.after", this, outputTextBox, commandTextBox);
+			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.after", this, outputListBox, commandTextBox);
 		}
 
-		private void OutputTextBox_GotFocus(object? sender, EventArgs e)
+		private void OutputListBox_GotFocus(object? sender, EventArgs e)
 		{
-			// WinForms can raise this after WM_SETFOCUS; diversion is handled in TerminalOutputTextBox.WndProc.
-			TerminalDiagnosticLog.Line("output.GotFocus(ev)", "CLR GotFocus (see OutputTB.WndProc WM_SETFOCUS + DivertFocusFromOutput)");
-			TerminalDiagnosticLog.FocusSnapshot("output.GotFocus(ev)", this, outputTextBox, commandTextBox);
+			TerminalDiagnosticLog.Line("output.GotFocus(ev)", "CLR GotFocus (see OutputLB.WndProc WM_SETFOCUS + DivertFocusFromOutput)");
+			TerminalDiagnosticLog.FocusSnapshot("output.GotFocus(ev)", this, outputListBox, commandTextBox);
 		}
 
 		private void ShellComboBox_SelectedIndexChanged(object? sender, EventArgs e)
@@ -917,7 +926,7 @@ namespace MyFileExplorer
 		}
 
 		/// <summary>
-		/// Called from <see cref="TerminalOutputTextBox"/> immediately after the output Edit receives
+		/// Called from <see cref="TerminalOutputListBox"/> immediately after the output list receives
 		/// <c>WM_SETFOCUS</c>, so keyboard focus moves to the command line without leaving the log focused.
 		/// </summary>
 		internal void DivertFocusFromOutput()
@@ -933,13 +942,30 @@ namespace MyFileExplorer
 		{
 			if (IsDisposed)
 				return;
-			if (!commandTextBox.IsHandleCreated)
+			if (!IsHandleCreated || !commandTextBox.IsHandleCreated)
 			{
-				TerminalDiagnosticLog.Line("ScheduleFocusCommandInput", "defer BeginInvoke — command handle not created yet");
-				BeginInvoke(new Action(FocusCommandInput));
+				_pendingFocusCommandInput = true;
+				TerminalDiagnosticLog.Line("ScheduleFocusCommandInput",
+					$"pending focus; terminalHandle={IsHandleCreated} commandHandle={commandTextBox.IsHandleCreated}");
 				return;
 			}
 
+			FocusCommandInput();
+		}
+
+		private void FlushPendingFocusCommandInput(string source)
+		{
+			if (!_pendingFocusCommandInput || IsDisposed)
+				return;
+			if (!IsHandleCreated || !commandTextBox.IsHandleCreated)
+			{
+				TerminalDiagnosticLog.Line("FlushPendingFocus",
+					$"{source}: still waiting terminalHandle={IsHandleCreated} commandHandle={commandTextBox.IsHandleCreated}");
+				return;
+			}
+
+			_pendingFocusCommandInput = false;
+			TerminalDiagnosticLog.Line("FlushPendingFocus", $"{source}: running FocusCommandInput");
 			FocusCommandInput();
 		}
 
@@ -958,7 +984,7 @@ namespace MyFileExplorer
 				return;
 			}
 
-			TerminalDiagnosticLog.FocusSnapshot("FocusCommandInput.before", this, outputTextBox, commandTextBox);
+			TerminalDiagnosticLog.FocusSnapshot("FocusCommandInput.before", this, outputListBox, commandTextBox);
 			if (!commandTextBox.Focused)
 			{
 				TerminalDiagnosticLog.Line("FocusCommandInput", "calling commandTextBox.Focus()");
@@ -971,34 +997,117 @@ namespace MyFileExplorer
 
 			commandTextBox.SelectionStart = commandTextBox.TextLength;
 			commandTextBox.SelectionLength = 0;
-			TerminalDiagnosticLog.FocusSnapshot("FocusCommandInput.after", this, outputTextBox, commandTextBox);
+			PropagateActiveControlUpFrom(commandTextBox);
+			TerminalDiagnosticLog.FocusSnapshot("FocusCommandInput.after", this, outputListBox, commandTextBox);
 		}
 
-		/// <summary>
-		/// A zero-length selection at EOF makes the multiline Edit show an insertion caret even when unfocused
-		/// in some themes. Collapse to a one-character selection so only <see cref="HideSelection"/> applies.
-		/// </summary>
-		private void CollapseOutputSelectionToHideInsertionCaret()
+		private static void PropagateActiveControlUpFrom(Control focusedChild)
 		{
-			var len = outputTextBox.TextLength;
-			if (len <= 0)
-				return;
-			outputTextBox.SelectionStart = len - 1;
-			outputTextBox.SelectionLength = 1;
+			for (var walk = focusedChild; walk.Parent is ContainerControl cc; walk = cc)
+			{
+				try
+				{
+					if (cc.ActiveControl != walk)
+						cc.ActiveControl = walk;
+				}
+				catch (ArgumentException)
+				{
+					break;
+				}
+			}
 		}
 
-		private void ScrollOutputToBottom()
+		private string JoinOutputListLines()
 		{
-			if (!outputTextBox.IsHandleCreated)
-				return;
-			_ = SendMessageW(outputTextBox.Handle, WM_VSCROLL, (IntPtr)SB_BOTTOM, IntPtr.Zero);
+			var n = outputListBox.Items.Count;
+			if (n == 0)
+				return string.Empty;
+			var sb = new StringBuilder();
+			for (var i = 0; i < n; i++)
+			{
+				if (i > 0)
+					sb.AppendLine();
+				sb.Append(outputListBox.Items[i]?.ToString() ?? string.Empty);
+			}
+
+			return sb.ToString();
 		}
 
-		private const int WM_VSCROLL = 0x0115;
-		private const int SB_BOTTOM = 7;
+		private void PopulateOutputListFromText(string text)
+		{
+			outputListBox.BeginUpdate();
+			try
+			{
+				outputListBox.Items.Clear();
+				_runtimeOutputCharEstimate = 0;
+				_outputLineMaxPixelWidth = 0;
+				outputListBox.HorizontalExtent = 0;
+				if (string.IsNullOrEmpty(text))
+					return;
+				foreach (var segment in text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+				{
+					outputListBox.Items.Add(segment);
+					_runtimeOutputCharEstimate += segment.Length + Environment.NewLine.Length;
+				}
 
-		[DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = CharSet.Unicode)]
-		private static extern IntPtr SendMessageW(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+				RecomputeOutputHorizontalExtent();
+			}
+			finally
+			{
+				outputListBox.EndUpdate();
+			}
+
+			ScrollOutputListToBottom();
+		}
+
+		private void TrimOutputHeadIfOverBudget()
+		{
+			while (_runtimeOutputCharEstimate > MaxRuntimeOutputChars && outputListBox.Items.Count > 0)
+			{
+				var head = outputListBox.Items[0]?.ToString() ?? string.Empty;
+				_runtimeOutputCharEstimate -= head.Length + Environment.NewLine.Length;
+				outputListBox.Items.RemoveAt(0);
+			}
+		}
+
+		private void UpdateOutputHorizontalExtentForLine(string line)
+		{
+			var w = TextRenderer.MeasureText(line, outputListBox.Font, Size.Empty,
+				TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Width + 24;
+			if (w <= _outputLineMaxPixelWidth)
+				return;
+			_outputLineMaxPixelWidth = w;
+			outputListBox.HorizontalExtent = _outputLineMaxPixelWidth;
+		}
+
+		private void RecomputeOutputHorizontalExtent()
+		{
+			var max = 0;
+			var font = outputListBox.Font;
+			for (var i = 0; i < outputListBox.Items.Count; i++)
+			{
+				var s = outputListBox.Items[i]?.ToString() ?? string.Empty;
+				var w = TextRenderer.MeasureText(s, font, Size.Empty,
+					TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Width + 24;
+				if (w > max)
+					max = w;
+			}
+
+			_outputLineMaxPixelWidth = max;
+			outputListBox.HorizontalExtent = max;
+		}
+
+		private void ScrollOutputListToBottom()
+		{
+			if (!outputListBox.IsHandleCreated)
+				return;
+			var count = outputListBox.Items.Count;
+			if (count == 0)
+				return;
+			var ih = Math.Max(outputListBox.ItemHeight, 1);
+			var visible = Math.Max(1, outputListBox.ClientSize.Height / ih);
+			outputListBox.TopIndex = Math.Max(0, count - visible);
+		}
 	}
 
 	/// <summary>
