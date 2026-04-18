@@ -48,7 +48,7 @@ namespace MyFileExplorer
 		public event EventHandler? ShellExited;
 
 		/// <summary>
-		/// Gets the read-only output text box (multiline log; not a <see cref="RichTextBox"/> so RichEdit does not draw a fake caret over the stream).
+		/// Gets the read-only output text box (multiline log; <see cref="TerminalOutputTextBox"/> is non-selectable and collapses EOF selection so no caret draws over the stream).
 		/// </summary>
 		[Browsable(false)]
 		public TextBox OutputTextBox => outputTextBox;
@@ -276,8 +276,7 @@ namespace MyFileExplorer
 			ShellType = state.ShellType;
 			_lastKnownWorkingDirectory = NormalizePersistedDirectory(state.LastWorkingDirectory);
 			outputTextBox.Text = LimitPersistedOutput(state.OutputText);
-			outputTextBox.SelectionStart = outputTextBox.TextLength;
-			outputTextBox.SelectionLength = 0;
+			CollapseOutputSelectionToHideInsertionCaret();
 			ScrollOutputToBottom();
 			RestoreDirectoryHistory(state.DirectoryHistory);
 			ResetHistoryNavigation();
@@ -399,6 +398,7 @@ namespace MyFileExplorer
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
 			outputTextBox.SelectionLength = 0;
 			outputTextBox.AppendText(line + Environment.NewLine);
+			CollapseOutputSelectionToHideInsertionCaret();
 			ScrollOutputToBottom();
 			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line));
 		}
@@ -819,6 +819,19 @@ namespace MyFileExplorer
 				commandTextBox.Focus();
 			commandTextBox.SelectionStart = commandTextBox.TextLength;
 			commandTextBox.SelectionLength = 0;
+		}
+
+		/// <summary>
+		/// A zero-length selection at EOF makes the multiline Edit show an insertion caret even when unfocused
+		/// in some themes. Collapse to a one-character selection so only <see cref="HideSelection"/> applies.
+		/// </summary>
+		private void CollapseOutputSelectionToHideInsertionCaret()
+		{
+			var len = outputTextBox.TextLength;
+			if (len <= 0)
+				return;
+			outputTextBox.SelectionStart = len - 1;
+			outputTextBox.SelectionLength = 1;
 		}
 
 		private void ScrollOutputToBottom()

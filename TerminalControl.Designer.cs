@@ -22,7 +22,7 @@ namespace MyFileExplorer
 			startStopButton = new Button();
 			shellComboBox = new ComboBox();
 			shellLabel = new Label();
-			outputTextBox = new TextBox();
+			outputTextBox = new TerminalOutputTextBox();
 			commandTextBox = new TextBox();
 			topPanel.SuspendLayout();
 			SuspendLayout();
@@ -133,7 +133,7 @@ namespace MyFileExplorer
 		private ComboBox shellComboBox;
 		private Button startStopButton;
 		private Button clearButton;
-		private TextBox outputTextBox;
+		private TerminalOutputTextBox outputTextBox;
 		private TextBox commandTextBox;
 	}
 }
