@@ -10,6 +10,19 @@ namespace MyFileExplorer
 	/// </summary>
 	public partial class TerminalControl : UserControl
 	{
+		/// <summary>
+		/// When true (default), writes verbose diagnostics to <see cref="TerminalDiagnosticLog"/>.
+		/// Log file: <c>%LocalApplicationData%\MyFileExplorer\terminal-diagnostic.log</c>
+		/// </summary>
+		public static bool TerminalDiagnosticLoggingEnabled
+		{
+			get => TerminalDiagnosticLog.Enabled;
+			set => TerminalDiagnosticLog.Enabled = value;
+		}
+
+		/// <summary>Path to the diagnostic log file, or null if unavailable.</summary>
+		public static string? TerminalDiagnosticLogFilePath => TerminalDiagnosticLog.FilePath;
+
 		private const int MaxPersistedOutputChars = 64 * 1024;
 		private const int MaxHistoryEntriesPerDirectory = 100;
 		private const int MaxHistoryDirectories = 200;
@@ -25,6 +38,7 @@ namespace MyFileExplorer
 		private int _historyIndex = -1;
 		private string _historyDraftInput = string.Empty;
 		private string _historyContextKey = DefaultHistoryDirectoryKey;
+		private int _diagnosticAppendLineCount;
 
 		/// <summary>
 		/// Raised when a new line of output is appended.
@@ -96,23 +110,35 @@ namespace MyFileExplorer
 		public TerminalControl()
 		{
 			InitializeComponent();
+			TerminalDiagnosticLog.Line("Init",
+				$"TerminalControl ctor; diagnostic file={TerminalDiagnosticLog.FilePath ?? "(none)"}");
 			outputTextBox.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point);
 			// Allow large session logs; user input is still blocked by ReadOnly.
 			outputTextBox.MaxLength = 16 * 1024 * 1024;
 			outputTextBox.GotFocus += OutputTextBox_GotFocus;
+			outputTextBox.LostFocus += (_, _) =>
+				TerminalDiagnosticLog.Line("output.LostFocus(ev)", "LostFocus event on output TextBox");
+			commandTextBox.GotFocus += (_, _) =>
+				TerminalDiagnosticLog.FocusSnapshot("command.GotFocus(ev)", this, outputTextBox, commandTextBox);
+			commandTextBox.LostFocus += (_, _) =>
+				TerminalDiagnosticLog.Line("command.LostFocus(ev)", "LostFocus event on command TextBox");
 			PopulateShellCombo();
 			UpdateStartStopButtonText();
 		}
 
 		protected override void OnEnter(EventArgs e)
 		{
+			TerminalDiagnosticLog.Line("TerminalControl.OnEnter", "before base.OnEnter");
 			base.OnEnter(e);
 			FocusCommandInput();
+			TerminalDiagnosticLog.Line("TerminalControl.OnEnter", "after FocusCommandInput");
 		}
 
 		protected override void OnHandleCreated(EventArgs e)
 		{
 			base.OnHandleCreated(e);
+			TerminalDiagnosticLog.Line("TerminalControl.OnHandleCreated",
+				$"DesignMode={IsInDesignMode()} AutoStartShell={AutoStartShell} Handle={Handle}");
 			if (IsInDesignMode())
 				return;
 			if (AutoStartShell)
@@ -121,6 +147,7 @@ namespace MyFileExplorer
 
 		protected override void OnHandleDestroyed(EventArgs e)
 		{
+			TerminalDiagnosticLog.Line("TerminalControl.OnHandleDestroyed", $"Handle={Handle}");
 			StopShell();
 			base.OnHandleDestroyed(e);
 		}
@@ -130,6 +157,7 @@ namespace MyFileExplorer
 		/// </summary>
 		public void StartShell()
 		{
+			TerminalDiagnosticLog.Line("StartShell", $"enter IsDesign={IsInDesignMode()} IsRunning={IsShellRunning} ShellType={_shellType}");
 			if (IsInDesignMode() || IsShellRunning)
 				return;
 
@@ -137,9 +165,12 @@ namespace MyFileExplorer
 			try
 			{
 				startInfo = BuildStartInfo(_shellType, _lastKnownWorkingDirectory);
+				TerminalDiagnosticLog.Line("StartShell",
+					$"BuildStartInfo FileName={startInfo.FileName} Args={TerminalDiagnosticLog.SafePreview(startInfo.Arguments, 120)} WD={startInfo.WorkingDirectory}");
 			}
 			catch (Exception ex)
 			{
+				TerminalDiagnosticLog.Line("StartShell", $"BuildStartInfo failed: {ex.GetType().Name}: {ex.Message}");
 				AppendOutputLine($"Failed to resolve shell executable: {ex.Message}");
 				return;
 			}
@@ -162,10 +193,13 @@ namespace MyFileExplorer
 				_shellInput.AutoFlush = true;
 				process.BeginOutputReadLine();
 				process.BeginErrorReadLine();
+				TerminalDiagnosticLog.Line("StartShell",
+					$"process started Id={process.Id} HasExited={process.HasExited}");
 				AppendOutputLine($"Started {_shellType} session.");
 			}
 			catch (Exception ex)
 			{
+				TerminalDiagnosticLog.Line("StartShell", $"process.Start failed: {ex.GetType().Name}: {ex.Message}");
 				AppendOutputLine($"Failed to start shell: {ex.Message}");
 				process.OutputDataReceived -= ShellProcess_OutputDataReceived;
 				process.ErrorDataReceived -= ShellProcess_ErrorDataReceived;
@@ -186,6 +220,7 @@ namespace MyFileExplorer
 		/// </summary>
 		public void StopShell()
 		{
+			TerminalDiagnosticLog.Line("StopShell", $"enter hadProcess={_shellProcess != null}");
 			var process = _shellProcess;
 			var input = _shellInput;
 			_shellProcess = null;
@@ -232,6 +267,7 @@ namespace MyFileExplorer
 			}
 
 			UpdateStartStopButtonText();
+			TerminalDiagnosticLog.Line("StopShell", "exit");
 		}
 
 		/// <summary>
@@ -245,6 +281,7 @@ namespace MyFileExplorer
 
 		internal void SyncWorkingDirectory(string path)
 		{
+			TerminalDiagnosticLog.Line("SyncWorkingDirectory", $"path={TerminalDiagnosticLog.SafePreview(path, 200)} exists={!string.IsNullOrWhiteSpace(path) && Directory.Exists(path)}");
 			if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
 				return;
 
@@ -257,6 +294,7 @@ namespace MyFileExplorer
 		internal TerminalState CaptureState()
 		{
 			var outputText = outputTextBox.Text ?? string.Empty;
+			TerminalDiagnosticLog.Line("CaptureState", $"raw outputLen={outputText.Length}");
 			if (outputText.Length > MaxPersistedOutputChars)
 				outputText = outputText[^MaxPersistedOutputChars..];
 
@@ -272,11 +310,16 @@ namespace MyFileExplorer
 		internal void RestoreState(TerminalState? state)
 		{
 			if (state == null)
+			{
+				TerminalDiagnosticLog.Line("RestoreState", "state=null; skip");
 				return;
+			}
 
+			TerminalDiagnosticLog.Line("RestoreState",
+				$"ShellType={state.ShellType} outputLen={state.OutputText?.Length ?? 0} cwdLen={state.LastWorkingDirectory?.Length ?? 0}");
 			ShellType = state.ShellType;
 			_lastKnownWorkingDirectory = NormalizePersistedDirectory(state.LastWorkingDirectory);
-			outputTextBox.Text = LimitPersistedOutput(state.OutputText);
+			outputTextBox.Text = LimitPersistedOutput(state.OutputText ?? string.Empty);
 			CollapseOutputSelectionToHideInsertionCaret();
 			ScrollOutputToBottom();
 			RestoreDirectoryHistory(state.DirectoryHistory);
@@ -285,6 +328,8 @@ namespace MyFileExplorer
 
 		private void SendCommand(string command, bool echoCommand, bool suppressOutput = false)
 		{
+			TerminalDiagnosticLog.Line("SendCommand",
+				$"echo={echoCommand} suppress={suppressOutput} len={command?.Length ?? 0} preview={TerminalDiagnosticLog.SafePreview(command, 200)}");
 			if (string.IsNullOrWhiteSpace(command))
 				return;
 
@@ -292,11 +337,15 @@ namespace MyFileExplorer
 				StartShell();
 
 			if (!IsShellRunning || _shellInput == null)
+			{
+				TerminalDiagnosticLog.Line("SendCommand", "aborted: shell not running or no stdin");
 				return;
+			}
 
 			var trimmedCommand = command.Trim();
 			if (IsClearCommand(trimmedCommand))
 			{
+				TerminalDiagnosticLog.Line("SendCommand", "clear command -> ClearOutput");
 				ClearOutput();
 				return;
 			}
@@ -307,6 +356,7 @@ namespace MyFileExplorer
 				{
 					_suppressedOutputFragments.Add(trimmedCommand);
 				}
+				TerminalDiagnosticLog.Line("SendCommand", $"suppress fragment recorded: {TerminalDiagnosticLog.SafePreview(trimmedCommand, 80)}");
 			}
 
 			if (echoCommand)
@@ -316,17 +366,24 @@ namespace MyFileExplorer
 			try
 			{
 				_shellInput.WriteLine(trimmedCommand);
+				TerminalDiagnosticLog.Line("SendCommand", "WriteLine to stdin OK");
 				if (echoCommand)
 					CommandSent?.Invoke(this, new TerminalCommandEventArgs(trimmedCommand));
 				TryRecordCommandHistory(trimmedCommand, echoCommand);
 			}
 			catch (Exception ex)
 			{
+				TerminalDiagnosticLog.Line("SendCommand", $"WriteLine failed: {ex.GetType().Name}: {ex.Message}");
 				AppendOutputLine($"Failed to send command: {ex.Message}");
 			}
 		}
 
-		public void ClearOutput() => outputTextBox.Clear();
+		public void ClearOutput()
+		{
+			TerminalDiagnosticLog.Line("ClearOutput", $"before clear outputLen={outputTextBox.TextLength}");
+			outputTextBox.Clear();
+			TerminalDiagnosticLog.Line("ClearOutput", "after clear");
+		}
 
 		private void PopulateShellCombo()
 		{
@@ -347,8 +404,10 @@ namespace MyFileExplorer
 
 		private void RestartShell()
 		{
+			TerminalDiagnosticLog.Line("RestartShell", "enter");
 			StopShell();
 			StartShell();
+			TerminalDiagnosticLog.Line("RestartShell", "exit");
 		}
 
 		private static ProcessStartInfo BuildStartInfo(TerminalShellType shellType, string? workingDirectory)
@@ -386,22 +445,41 @@ namespace MyFileExplorer
 		private void AppendOutputLine(string line)
 		{
 			if (IsDisposed)
+			{
+				TerminalDiagnosticLog.Line("AppendOutputLine", "skip: disposed");
 				return;
+			}
+
 			if (ShouldSuppressOutputLine(line))
+			{
+				TerminalDiagnosticLog.Line("AppendOutputLine", $"suppressed line len={line?.Length ?? 0} preview={TerminalDiagnosticLog.SafePreview(line, 100)}");
 				return;
+			}
 
 			if (outputTextBox.InvokeRequired)
 			{
+				TerminalDiagnosticLog.Line("AppendOutputLine",
+					$"BeginInvoke marshal len={line?.Length ?? 0} preview={TerminalDiagnosticLog.SafePreview(line, 100)}");
 				outputTextBox.BeginInvoke(new Action<string>(AppendOutputLine), line);
 				return;
 			}
+
+			var beforeLen = outputTextBox.TextLength;
+			_diagnosticAppendLineCount++;
+			var previewNote = _diagnosticAppendLineCount <= 400
+				? TerminalDiagnosticLog.SafePreview(line, 120)
+				: $"(preview omitted after 400 lines; n={_diagnosticAppendLineCount})";
+			TerminalDiagnosticLog.Line("AppendOutputLine",
+				$"UI beforeLen={beforeLen} lineLen={line?.Length ?? 0} n={_diagnosticAppendLineCount} preview={previewNote}");
 
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
 			outputTextBox.SelectionLength = 0;
 			outputTextBox.AppendText(line + Environment.NewLine);
 			CollapseOutputSelectionToHideInsertionCaret();
 			ScrollOutputToBottom();
-			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line));
+			TerminalDiagnosticLog.Line("AppendOutputLine",
+				$"after textLen={outputTextBox.TextLength} selStart={outputTextBox.SelectionStart} selLen={outputTextBox.SelectionLength}");
+			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line ?? string.Empty));
 		}
 
 		private bool ShouldSuppressOutputLine(string line)
@@ -445,6 +523,7 @@ namespace MyFileExplorer
 
 		private void StartStopButton_Click(object? sender, EventArgs e)
 		{
+			TerminalDiagnosticLog.Line("StartStopButton_Click", $"IsShellRunning={IsShellRunning}");
 			if (IsShellRunning)
 				StopShell();
 			else
@@ -452,14 +531,21 @@ namespace MyFileExplorer
 			FocusCommandInput();
 		}
 
-		private void ClearButton_Click(object? sender, EventArgs e) => ClearOutput();
+		private void ClearButton_Click(object? sender, EventArgs e)
+		{
+			TerminalDiagnosticLog.Line("ClearButton_Click", "click");
+			ClearOutput();
+		}
 
 		private void CommandTextBox_KeyDown(object? sender, KeyEventArgs e)
 		{
+			TerminalDiagnosticLog.Line("command.KeyDown",
+				$"KeyData={e.KeyData} KeyCode={e.KeyCode} Modifiers={e.Modifiers} SuppressKeyPress={e.SuppressKeyPress}");
 			if (e.Control && e.KeyCode == Keys.L)
 			{
 				e.Handled = true;
 				e.SuppressKeyPress = true;
+				TerminalDiagnosticLog.Line("command.KeyDown", "Ctrl+L -> ClearOutput");
 				ClearOutput();
 				FocusCommandInput();
 				return;
@@ -469,6 +555,7 @@ namespace MyFileExplorer
 			{
 				e.Handled = true;
 				e.SuppressKeyPress = true;
+				TerminalDiagnosticLog.Line("command.KeyDown", "Up -> history");
 				NavigateHistory(moveUp: true);
 				return;
 			}
@@ -477,6 +564,7 @@ namespace MyFileExplorer
 			{
 				e.Handled = true;
 				e.SuppressKeyPress = true;
+				TerminalDiagnosticLog.Line("command.KeyDown", "Down -> history");
 				NavigateHistory(moveUp: false);
 				return;
 			}
@@ -487,6 +575,7 @@ namespace MyFileExplorer
 			e.Handled = true;
 			e.SuppressKeyPress = true;
 			var command = commandTextBox.Text;
+			TerminalDiagnosticLog.Line("command.KeyDown", $"Enter -> execute len={command.Length} preview={TerminalDiagnosticLog.SafePreview(command, 200)}");
 			commandTextBox.Clear();
 			SendCommand(command);
 			ResetHistoryNavigation();
@@ -498,14 +587,29 @@ namespace MyFileExplorer
 		/// the input: Windows delivers character messages only to the HWND with keyboard focus; if the log had
 		/// focus, typed input would stay in the read-only Edit (often a beep), not in the command box.
 		/// </summary>
-		private void OutputTextBox_MouseDown(object? sender, MouseEventArgs e) => FocusCommandInput();
+		private void OutputTextBox_MouseDown(object? sender, MouseEventArgs e)
+		{
+			TerminalDiagnosticLog.Line("output.MouseDown",
+				$"Button={e.Button} Clicks={e.Clicks} ({e.X},{e.Y}) -> FocusCommandInput");
+			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.before", this, outputTextBox, commandTextBox);
+			FocusCommandInput();
+			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.after", this, outputTextBox, commandTextBox);
+		}
 
 		private void OutputTextBox_GotFocus(object? sender, EventArgs e)
 		{
+			TerminalDiagnosticLog.Line("output.GotFocus(ev)",
+				"output box GotFocus event -> BeginInvoke(FocusCommandInput)");
+			TerminalDiagnosticLog.FocusSnapshot("output.GotFocus.beforeBeginInvoke", this, outputTextBox, commandTextBox);
 			if (IsDisposed)
 				return;
 			// Defer past the focus transition so we do not re-enter focus logic mid-message.
-			BeginInvoke(new Action(FocusCommandInput));
+			BeginInvoke(new Action(() =>
+			{
+				TerminalDiagnosticLog.Line("output.GotFocus", "deferred FocusCommandInput running");
+				FocusCommandInput();
+				TerminalDiagnosticLog.FocusSnapshot("output.GotFocus.afterDeferred", this, outputTextBox, commandTextBox);
+			}));
 		}
 
 		private void ShellComboBox_SelectedIndexChanged(object? sender, EventArgs e)
@@ -516,6 +620,7 @@ namespace MyFileExplorer
 			if (_shellType == selected)
 				return;
 
+			TerminalDiagnosticLog.Line("ShellCombo", $"changed to {selected} (restart if running={IsShellRunning})");
 			_shellType = selected;
 			if (IsShellRunning)
 				RestartShell();
@@ -535,6 +640,7 @@ namespace MyFileExplorer
 
 		private void ShellProcess_Exited(object? sender, EventArgs e)
 		{
+			TerminalDiagnosticLog.Line("shell.Exited", $"ShellType={_shellType}");
 			AppendOutputLine($"[{_shellType}] session exited.");
 			ShellExited?.Invoke(this, EventArgs.Empty);
 			UpdateStartStopButtonText();
@@ -821,18 +927,32 @@ namespace MyFileExplorer
 		private void FocusCommandInput()
 		{
 			if (IsDisposed || !commandTextBox.IsHandleCreated)
+			{
+				TerminalDiagnosticLog.Line("FocusCommandInput", "early exit: disposed or command handle missing");
 				return;
+			}
 
 			if (commandTextBox.InvokeRequired)
 			{
+				TerminalDiagnosticLog.Line("FocusCommandInput", "BeginInvoke(FocusCommandInput) — not on UI thread");
 				commandTextBox.BeginInvoke(new Action(FocusCommandInput));
 				return;
 			}
 
+			TerminalDiagnosticLog.FocusSnapshot("FocusCommandInput.before", this, outputTextBox, commandTextBox);
 			if (!commandTextBox.Focused)
+			{
+				TerminalDiagnosticLog.Line("FocusCommandInput", "calling commandTextBox.Focus()");
 				commandTextBox.Focus();
+			}
+			else
+			{
+				TerminalDiagnosticLog.Line("FocusCommandInput", "commandTextBox.Focused already true; skipping Focus()");
+			}
+
 			commandTextBox.SelectionStart = commandTextBox.TextLength;
 			commandTextBox.SelectionLength = 0;
+			TerminalDiagnosticLog.FocusSnapshot("FocusCommandInput.after", this, outputTextBox, commandTextBox);
 		}
 
 		/// <summary>

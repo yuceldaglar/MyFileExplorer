@@ -85,6 +85,16 @@ terminal.SendCommand("dir");
 - **Shutdown behavior** - The control attempts graceful `exit`; if needed it force-terminates the shell process tree.
 - **Design-time safety** - Process startup is skipped in design mode.
 
+## Diagnostics (verbose logging)
+
+When **`TerminalControl.TerminalDiagnosticLoggingEnabled`** is `true` (default), the control writes detailed lines (focus, keyboard, shell lifecycle, each output append with a safe text preview for the first 400 lines, etc.) to:
+
+`%LocalApplicationData%\MyFileExplorer\terminal-diagnostic.log`
+
+The same lines are mirrored to **`Debug`** output (Visual Studio **Output** window). Set **`TerminalDiagnosticLoggingEnabled = false`** to disable file and debug logging.
+
+**`TerminalControl.TerminalDiagnosticLogFilePath`** exposes the resolved path (or `null` if logging could not initialize).
+
 ## Requirements
 
 - .NET 10.0 (or compatible Windows Forms target)
