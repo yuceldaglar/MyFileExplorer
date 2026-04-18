@@ -3,13 +3,13 @@ using System.Runtime.InteropServices;
 namespace MyFileExplorer
 {
 	/// <summary>
-	/// Read-only log surface for terminal output. RichEdit draws its own blinking insertion point
-	/// when the selection is a zero-length range at the end of text; this control suppresses that
-	/// for a display-only feel while keeping normal RichTextBox scrolling and selection colors.
+	/// Read-only log surface for terminal output. RichEdit can draw a blinking insertion point at the
+	/// selection; we use <see cref="HideSelection"/> / <c>EM_HIDESELECTION</c>, non-selectable style, and
+	/// <see cref="HideCaret"/> only while this control actually has focus — calling <c>HideCaret</c> on
+	/// this HWND when the command line owns the thread caret can hide the caret for the wrong control.
 	/// </summary>
 	internal sealed class TerminalOutputRichTextBox : RichTextBox
 	{
-		private const int WM_SETFOCUS = 0x0007;
 		/// <summary>Rich Edit: hide selection and insertion point when the control loses focus.</summary>
 		private const int EM_HIDESELECTION = 0x400 + 59;
 
@@ -19,7 +19,6 @@ namespace MyFileExplorer
 		{
 			// Avoid the output surface taking keyboard focus like an editor; command line stays primary.
 			SetStyle(ControlStyles.Selectable, false);
-			SelectionChanged += (_, _) => SuppressCaret();
 		}
 
 		protected override void OnHandleCreated(EventArgs e)
@@ -27,13 +26,6 @@ namespace MyFileExplorer
 			base.OnHandleCreated(e);
 			// Belt-and-suspenders with <see cref="HideSelection"/> — some RichEdit builds need the message.
 			_ = SendMessageW(Handle, EM_HIDESELECTION, (IntPtr)1, IntPtr.Zero);
-			SuppressCaret();
-		}
-
-		protected override void OnEnter(EventArgs e)
-		{
-			base.OnEnter(e);
-			SuppressCaret();
 		}
 
 		protected override void OnGotFocus(EventArgs e)
@@ -42,22 +34,14 @@ namespace MyFileExplorer
 			SuppressCaret();
 		}
 
-		protected override void WndProc(ref Message m)
-		{
-			base.WndProc(ref m);
-			if (m.Msg == WM_SETFOCUS && IsHandleCreated)
-				SuppressCaret();
-		}
-
 		/// <summary>
-		/// Call after programmatically moving the selection or appending text so RichEdit does not leave a visible caret.
+		/// Hides the system caret only when this control owns it. Safe to call after appends even when unfocused (no-op).
 		/// </summary>
 		internal void SuppressCaret()
 		{
-			if (!IsHandleCreated)
+			if (!IsHandleCreated || !Focused)
 				return;
 			HideCaret(Handle);
-			// RichEdit sometimes recreates the caret on the next message pump; coalesce BeginInvoke under rapid output.
 			if (_deferredCaretSuppressPosted != 0)
 				return;
 			_deferredCaretSuppressPosted = 1;
@@ -67,7 +51,7 @@ namespace MyFileExplorer
 		private void SuppressCaretDeferred()
 		{
 			_deferredCaretSuppressPosted = 0;
-			if (!IsHandleCreated || IsDisposed)
+			if (!IsHandleCreated || IsDisposed || !Focused)
 				return;
 			HideCaret(Handle);
 		}

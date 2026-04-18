@@ -823,7 +823,13 @@ namespace MyFileExplorer
 				commandTextBox.Focus();
 			commandTextBox.SelectionStart = commandTextBox.TextLength;
 			commandTextBox.SelectionLength = 0;
+			// Aggressive HideCaret on the output RichEdit must never run while the command line owns the
+			// thread caret; still call ShowCaret here so the input caret stays visible after focus moves.
+			_ = ShowCaret(commandTextBox.Handle);
 		}
+
+		[DllImport("user32.dll")]
+		private static extern bool ShowCaret(IntPtr hWnd);
 
 		private void ScrollOutputRichTextToBottom()
 		{
