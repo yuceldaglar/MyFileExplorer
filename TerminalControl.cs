@@ -99,6 +99,7 @@ namespace MyFileExplorer
 			outputTextBox.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point);
 			// Allow large session logs; user input is still blocked by ReadOnly.
 			outputTextBox.MaxLength = 16 * 1024 * 1024;
+			outputTextBox.GotFocus += OutputTextBox_GotFocus;
 			PopulateShellCombo();
 			UpdateStartStopButtonText();
 		}
@@ -492,7 +493,20 @@ namespace MyFileExplorer
 			FocusCommandInput();
 		}
 
+		/// <summary>
+		/// Clicking the log moves focus to the command line. There is no keystroke forwarding from the log to
+		/// the input: Windows delivers character messages only to the HWND with keyboard focus; if the log had
+		/// focus, typed input would stay in the read-only Edit (often a beep), not in the command box.
+		/// </summary>
 		private void OutputTextBox_MouseDown(object? sender, MouseEventArgs e) => FocusCommandInput();
+
+		private void OutputTextBox_GotFocus(object? sender, EventArgs e)
+		{
+			if (IsDisposed)
+				return;
+			// Defer past the focus transition so we do not re-enter focus logic mid-message.
+			BeginInvoke(new Action(FocusCommandInput));
+		}
 
 		private void ShellComboBox_SelectedIndexChanged(object? sender, EventArgs e)
 		{

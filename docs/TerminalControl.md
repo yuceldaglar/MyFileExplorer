@@ -14,7 +14,7 @@ A Windows Forms user control that hosts an interactive shell session (`PowerShel
 
 - **Interactive shell session** - Starts a real shell process and keeps session state between commands.
 - **Command input** - Press Enter in the command box to execute.
-- **Input focus forwarding** - Clicking in the output area moves focus to the command input so typing can continue immediately.
+- **Input focus forwarding** - Clicking the black log runs `FocusCommandInput()` (`MouseDown` on the output box, plus `GotFocus` on the output box deferred to the same helper so the log never keeps keyboard focus if something else activates it). There is **no** code that forwards `KeyDown`/`WM_CHAR` from the log to the command line: typed characters only appear in whichever control actually has focus; the log is read-only.
 - **Live output** - Standard output and error are both streamed into the output area.
 - **Output as log** - The output pane is a read-only **multiline `TerminalOutputTextBox`** (`TextBox` subclass): **non-selectable** so the log never keeps keyboard focus or the system insertion caret, **`HideSelection`** so the collapsed EOF selection stays invisible while you type below, **`WordWrap = false`**, scroll bars, and **`WM_VSCROLL` / `SB_BOTTOM`** after each append. After every append the selection is collapsed to a single character (not a zero-width insertion point at EOF) to avoid a blinking caret in the black area.
 - **Shell selection** - Supports `PowerShell` and `CommandPrompt` via `ShellType`.

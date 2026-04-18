@@ -10,6 +10,8 @@ namespace MyFileExplorer
 		public TerminalOutputTextBox()
 		{
 			SetStyle(ControlStyles.Selectable, false);
+			// Read-only log is not a typing surface; arrow avoids an I-beam over non-editable output.
+			Cursor = Cursors.Arrow;
 		}
 	}
 }
