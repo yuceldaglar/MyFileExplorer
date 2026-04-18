@@ -48,10 +48,10 @@ namespace MyFileExplorer
 		public event EventHandler? ShellExited;
 
 		/// <summary>
-		/// Gets the read-only output text box.
+		/// Gets the read-only output text box (multiline log; not a <see cref="RichTextBox"/> so RichEdit does not draw a fake caret over the stream).
 		/// </summary>
 		[Browsable(false)]
-		public RichTextBox OutputTextBox => outputTextBox;
+		public TextBox OutputTextBox => outputTextBox;
 
 		/// <summary>
 		/// Gets the command input text box.
@@ -97,6 +97,8 @@ namespace MyFileExplorer
 		{
 			InitializeComponent();
 			outputTextBox.Font = new Font("Consolas", 9F, FontStyle.Regular, GraphicsUnit.Point);
+			// Allow large session logs; user input is still blocked by ReadOnly.
+			outputTextBox.MaxLength = 16 * 1024 * 1024;
 			PopulateShellCombo();
 			UpdateStartStopButtonText();
 		}
@@ -276,8 +278,7 @@ namespace MyFileExplorer
 			outputTextBox.Text = LimitPersistedOutput(state.OutputText);
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
 			outputTextBox.SelectionLength = 0;
-			ScrollOutputRichTextToBottom();
-			outputTextBox.SuppressCaret();
+			ScrollOutputToBottom();
 			RestoreDirectoryHistory(state.DirectoryHistory);
 			ResetHistoryNavigation();
 		}
@@ -325,11 +326,7 @@ namespace MyFileExplorer
 			}
 		}
 
-		public void ClearOutput()
-		{
-			outputTextBox.Clear();
-			outputTextBox.SuppressCaret();
-		}
+		public void ClearOutput() => outputTextBox.Clear();
 
 		private void PopulateShellCombo()
 		{
@@ -402,8 +399,7 @@ namespace MyFileExplorer
 			outputTextBox.SelectionStart = outputTextBox.TextLength;
 			outputTextBox.SelectionLength = 0;
 			outputTextBox.AppendText(line + Environment.NewLine);
-			ScrollOutputRichTextToBottom();
-			outputTextBox.SuppressCaret();
+			ScrollOutputToBottom();
 			OutputReceived?.Invoke(this, new TerminalOutputEventArgs(line));
 		}
 
@@ -823,15 +819,9 @@ namespace MyFileExplorer
 				commandTextBox.Focus();
 			commandTextBox.SelectionStart = commandTextBox.TextLength;
 			commandTextBox.SelectionLength = 0;
-			// Aggressive HideCaret on the output RichEdit must never run while the command line owns the
-			// thread caret; still call ShowCaret here so the input caret stays visible after focus moves.
-			_ = ShowCaret(commandTextBox.Handle);
 		}
 
-		[DllImport("user32.dll")]
-		private static extern bool ShowCaret(IntPtr hWnd);
-
-		private void ScrollOutputRichTextToBottom()
+		private void ScrollOutputToBottom()
 		{
 			if (!outputTextBox.IsHandleCreated)
 				return;
