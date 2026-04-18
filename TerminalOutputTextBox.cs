@@ -9,8 +9,10 @@ namespace MyFileExplorer
 	/// </summary>
 	internal sealed class TerminalOutputTextBox : TextBox
 	{
+		private const int WM_MOUSEACTIVATE = 0x0021;
 		private const int WM_SETFOCUS = 0x0007;
 		private const int WM_KILLFOCUS = 0x0008;
+		private const int MA_NOACTIVATE = 3;
 
 		public TerminalOutputTextBox()
 		{
@@ -40,11 +42,28 @@ namespace MyFileExplorer
 
 		protected override void WndProc(ref Message m)
 		{
-			if (m.Msg == WM_SETFOCUS || m.Msg == WM_KILLFOCUS)
+			// Prevent mouse activation so clicks do not give the Edit keyboard focus (caret) before MouseDown redirects.
+			if (m.Msg == WM_MOUSEACTIVATE)
 			{
-				var name = m.Msg == WM_SETFOCUS ? "WM_SETFOCUS" : "WM_KILLFOCUS";
+				m.Result = (IntPtr)MA_NOACTIVATE;
+				return;
+			}
+
+			if (m.Msg == WM_SETFOCUS)
+			{
+				var name = "WM_SETFOCUS";
 				TerminalDiagnosticLog.Line("OutputTB.WndProc",
 					$"{name}(0x{m.Msg:X4}) wParam=0x{m.WParam.ToInt64():X} lParam=0x{m.LParam.ToInt64():X}");
+				base.WndProc(ref m);
+				if (Parent is TerminalControl terminal)
+					terminal.DivertFocusFromOutput();
+				return;
+			}
+
+			if (m.Msg == WM_KILLFOCUS)
+			{
+				TerminalDiagnosticLog.Line("OutputTB.WndProc",
+					$"WM_KILLFOCUS(0x{m.Msg:X4}) wParam=0x{m.WParam.ToInt64():X} lParam=0x{m.LParam.ToInt64():X}");
 			}
 
 			base.WndProc(ref m);

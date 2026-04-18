@@ -128,10 +128,10 @@ namespace MyFileExplorer
 
 		protected override void OnEnter(EventArgs e)
 		{
-			TerminalDiagnosticLog.Line("TerminalControl.OnEnter", "before base.OnEnter");
+			TerminalDiagnosticLog.Line("TerminalControl.OnEnter", "FocusCommandInput before base.OnEnter (child WM_SETFOCUS can run first otherwise)");
+			ScheduleFocusCommandInput();
 			base.OnEnter(e);
-			FocusCommandInput();
-			TerminalDiagnosticLog.Line("TerminalControl.OnEnter", "after FocusCommandInput");
+			TerminalDiagnosticLog.Line("TerminalControl.OnEnter", "after base.OnEnter");
 		}
 
 		protected override void OnHandleCreated(EventArgs e)
@@ -211,7 +211,8 @@ namespace MyFileExplorer
 			finally
 			{
 				UpdateStartStopButtonText();
-				FocusCommandInput();
+				// Shell can start from SendCommand before child handles exist; defer focus until command HWND exists.
+				ScheduleFocusCommandInput();
 			}
 		}
 
@@ -528,7 +529,7 @@ namespace MyFileExplorer
 				StopShell();
 			else
 				StartShell();
-			FocusCommandInput();
+			ScheduleFocusCommandInput();
 		}
 
 		private void ClearButton_Click(object? sender, EventArgs e)
@@ -547,7 +548,7 @@ namespace MyFileExplorer
 				e.SuppressKeyPress = true;
 				TerminalDiagnosticLog.Line("command.KeyDown", "Ctrl+L -> ClearOutput");
 				ClearOutput();
-				FocusCommandInput();
+				ScheduleFocusCommandInput();
 				return;
 			}
 
@@ -579,7 +580,7 @@ namespace MyFileExplorer
 			commandTextBox.Clear();
 			SendCommand(command);
 			ResetHistoryNavigation();
-			FocusCommandInput();
+			ScheduleFocusCommandInput();
 		}
 
 		/// <summary>
@@ -592,24 +593,15 @@ namespace MyFileExplorer
 			TerminalDiagnosticLog.Line("output.MouseDown",
 				$"Button={e.Button} Clicks={e.Clicks} ({e.X},{e.Y}) -> FocusCommandInput");
 			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.before", this, outputTextBox, commandTextBox);
-			FocusCommandInput();
+			ScheduleFocusCommandInput();
 			TerminalDiagnosticLog.FocusSnapshot("output.MouseDown.after", this, outputTextBox, commandTextBox);
 		}
 
 		private void OutputTextBox_GotFocus(object? sender, EventArgs e)
 		{
-			TerminalDiagnosticLog.Line("output.GotFocus(ev)",
-				"output box GotFocus event -> BeginInvoke(FocusCommandInput)");
-			TerminalDiagnosticLog.FocusSnapshot("output.GotFocus.beforeBeginInvoke", this, outputTextBox, commandTextBox);
-			if (IsDisposed)
-				return;
-			// Defer past the focus transition so we do not re-enter focus logic mid-message.
-			BeginInvoke(new Action(() =>
-			{
-				TerminalDiagnosticLog.Line("output.GotFocus", "deferred FocusCommandInput running");
-				FocusCommandInput();
-				TerminalDiagnosticLog.FocusSnapshot("output.GotFocus.afterDeferred", this, outputTextBox, commandTextBox);
-			}));
+			// WinForms can raise this after WM_SETFOCUS; diversion is handled in TerminalOutputTextBox.WndProc.
+			TerminalDiagnosticLog.Line("output.GotFocus(ev)", "CLR GotFocus (see OutputTB.WndProc WM_SETFOCUS + DivertFocusFromOutput)");
+			TerminalDiagnosticLog.FocusSnapshot("output.GotFocus(ev)", this, outputTextBox, commandTextBox);
 		}
 
 		private void ShellComboBox_SelectedIndexChanged(object? sender, EventArgs e)
@@ -922,6 +914,33 @@ namespace MyFileExplorer
 
 			foreach (var key in keysToRemove)
 				_directoryHistory.Remove(key);
+		}
+
+		/// <summary>
+		/// Called from <see cref="TerminalOutputTextBox"/> immediately after the output Edit receives
+		/// <c>WM_SETFOCUS</c>, so keyboard focus moves to the command line without leaving the log focused.
+		/// </summary>
+		internal void DivertFocusFromOutput()
+		{
+			TerminalDiagnosticLog.Line("DivertFocusFromOutput", "after output WM_SETFOCUS");
+			ScheduleFocusCommandInput();
+		}
+
+		/// <summary>
+		/// Ensures focus moves to the command line once its handle exists (shell may start before child HWND creation).
+		/// </summary>
+		private void ScheduleFocusCommandInput()
+		{
+			if (IsDisposed)
+				return;
+			if (!commandTextBox.IsHandleCreated)
+			{
+				TerminalDiagnosticLog.Line("ScheduleFocusCommandInput", "defer BeginInvoke — command handle not created yet");
+				BeginInvoke(new Action(FocusCommandInput));
+				return;
+			}
+
+			FocusCommandInput();
 		}
 
 		private void FocusCommandInput()
