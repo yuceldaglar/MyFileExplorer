@@ -17,6 +17,13 @@ namespace MyFileExplorer
 		public event EventHandler<FolderEventArgs>? CurrentPathChanged;
 
 		/// <summary>
+		/// Raised when the user requests opening a folder in a new application tab (from tree or list context menu).
+		/// </summary>
+		[Category("Action")]
+		[Description("Raised when the user chooses to open a folder in a new tab.")]
+		public event EventHandler<FolderEventArgs>? OpenFolderInNewTabRequested;
+
+		/// <summary>
 		/// Gets the PathItem ComboBox at the top of the left panel.
 		/// </summary>
 		[Browsable(false)]
@@ -50,7 +57,9 @@ namespace MyFileExplorer
 		{
 			InitializeComponent();
 			folderTreeControl.FolderSelected += FolderTreeControl_FolderSelected;
+			folderTreeControl.OpenFolderInNewTabRequested += FolderTreeControl_OpenFolderInNewTabRequested;
 			folderContentsControl.FolderDoubleClick += FolderContentsControl_FolderDoubleClick;
+			folderContentsControl.OpenFolderInNewTabRequested += FolderContentsControl_OpenFolderInNewTabRequested;
 			folderContentsControl.RefreshRequested += FolderContentsControl_RefreshRequested;
 			pathItemComboBox.SelectedFolderChanged += PathItemComboBox_SelectedFolderChanged;
 			pathItemComboBox.Items = Program.SavedPathItems;
@@ -99,6 +108,15 @@ namespace MyFileExplorer
 			RequestSelectFolderInTree(e.FolderPath);
 		}
 
+		private void FolderTreeControl_OpenFolderInNewTabRequested(object? sender, FolderEventArgs e) =>
+			OnOpenFolderInNewTabRequested(e);
+
+		private void FolderContentsControl_OpenFolderInNewTabRequested(object? sender, FolderEventArgs e) =>
+			OnOpenFolderInNewTabRequested(e);
+
+		private void OnOpenFolderInNewTabRequested(FolderEventArgs e) =>
+			OpenFolderInNewTabRequested?.Invoke(this, e);
+
 		/// <summary>
 		/// Refreshes both file contents and tree for this explorer instance.
 		/// </summary>
@@ -106,6 +124,18 @@ namespace MyFileExplorer
 		{
 			folderContentsControl.RefreshContents();
 			folderTreeControl.RefreshTree();
+		}
+
+		/// <summary>
+		/// Navigates this explorer to an existing directory, updating the path combo, tree selection, list, and terminal working directory.
+		/// </summary>
+		public void NavigateToFolder(string folderPath)
+		{
+			if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
+				return;
+
+			RestorePath(folderPath);
+			SyncTerminalDirectory(folderPath);
 		}
 
 		internal ExplorerTabState CaptureState()

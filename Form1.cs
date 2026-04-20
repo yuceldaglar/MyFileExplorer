@@ -111,6 +111,7 @@ namespace MyFileExplorer
 			_tabSessions.Add(session);
 
 			explorer.CurrentPathChanged += Explorer_CurrentPathChanged;
+			explorer.OpenFolderInNewTabRequested += Explorer_OpenFolderInNewTabRequested;
 			explorerTabControl.TabPages.Add(tabPage);
 
 			if (selectTab)
@@ -197,6 +198,15 @@ namespace MyFileExplorer
 				UpdateWindowTitle();
 		}
 
+		private void Explorer_OpenFolderInNewTabRequested(object? sender, FolderEventArgs e)
+		{
+			if (string.IsNullOrWhiteSpace(e.FolderPath) || !Directory.Exists(e.FolderPath))
+				return;
+
+			var session = CreateNewTab(selectTab: true);
+			session.Explorer.NavigateToFolder(e.FolderPath);
+		}
+
 		private void CloseActiveTab()
 		{
 			var session = GetActiveSession();
@@ -219,6 +229,7 @@ namespace MyFileExplorer
 		private void DisposeSession(ExplorerTabSession session)
 		{
 			session.Explorer.CurrentPathChanged -= Explorer_CurrentPathChanged;
+			session.Explorer.OpenFolderInNewTabRequested -= Explorer_OpenFolderInNewTabRequested;
 			session.Explorer.Dispose();
 		}
 

@@ -26,6 +26,13 @@ namespace MyFileExplorer
 		public event EventHandler<FolderEventArgs>? FolderSelected;
 
 		/// <summary>
+		/// Occurs when the user chooses to open the selected folder in a new tab.
+		/// </summary>
+		[Category("Action")]
+		[Description("Raised when the user requests opening the selected folder in a new tab.")]
+		public event EventHandler<FolderEventArgs>? OpenFolderInNewTabRequested;
+
+		/// <summary>
 		/// Gets or sets the root directory path. The tree view displays folders starting from this path.
 		/// Setting this property refreshes the tree.
 		/// </summary>
@@ -257,6 +264,7 @@ namespace MyFileExplorer
 			var path = GetSelectedFolderPath();
 			var hasPath = !string.IsNullOrEmpty(path) && Directory.Exists(path);
 			treeOpenToolStripMenuItem.Enabled = hasPath;
+			treeOpenInNewTabToolStripMenuItem.Enabled = hasPath;
 			treeExpandToolStripMenuItem.Enabled = folderTreeView.SelectedNode != null && folderTreeView.SelectedNode.Nodes.Count > 0;
 			treeCollapseToolStripMenuItem.Enabled = folderTreeView.SelectedNode != null && folderTreeView.SelectedNode.IsExpanded;
 			treeCutToolStripMenuItem.Enabled = hasPath;
@@ -273,6 +281,13 @@ namespace MyFileExplorer
 			var path = GetSelectedFolderPath();
 			if (!string.IsNullOrEmpty(path))
 				FolderSelected?.Invoke(this, new FolderEventArgs(path));
+		}
+
+		private void TreeOpenInNewTab_Click(object? sender, EventArgs e)
+		{
+			var path = GetSelectedFolderPath();
+			if (!string.IsNullOrEmpty(path))
+				OpenFolderInNewTabRequested?.Invoke(this, new FolderEventArgs(path));
 		}
 
 		private void TreeExpand_Click(object? sender, EventArgs e) => folderTreeView.SelectedNode?.Expand();

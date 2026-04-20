@@ -21,6 +21,7 @@ namespace MyFileExplorer
 			folderTreeView = new TreeView();
 			treeContextMenuStrip = new ContextMenuStrip(components);
 			treeOpenToolStripMenuItem = new ToolStripMenuItem();
+			treeOpenInNewTabToolStripMenuItem = new ToolStripMenuItem();
 			treeExpandToolStripMenuItem = new ToolStripMenuItem();
 			treeCollapseToolStripMenuItem = new ToolStripMenuItem();
 			treeSep1 = new ToolStripSeparator();
@@ -55,6 +56,7 @@ namespace MyFileExplorer
 			treeContextMenuStrip.ImageScalingSize = new Size(20, 20);
 			treeContextMenuStrip.Items.AddRange(new ToolStripItem[] {
 				treeOpenToolStripMenuItem,
+				treeOpenInNewTabToolStripMenuItem,
 				treeExpandToolStripMenuItem,
 				treeCollapseToolStripMenuItem,
 				treeSep1,
@@ -79,6 +81,13 @@ namespace MyFileExplorer
 			treeOpenToolStripMenuItem.Size = new Size(180, 26);
 			treeOpenToolStripMenuItem.Text = "Open";
 			treeOpenToolStripMenuItem.Click += TreeOpen_Click;
+			//
+			// treeOpenInNewTabToolStripMenuItem
+			//
+			treeOpenInNewTabToolStripMenuItem.Name = "treeOpenInNewTabToolStripMenuItem";
+			treeOpenInNewTabToolStripMenuItem.Size = new Size(180, 26);
+			treeOpenInNewTabToolStripMenuItem.Text = "Open in another tab";
+			treeOpenInNewTabToolStripMenuItem.Click += TreeOpenInNewTab_Click;
 			//
 			// treeExpandToolStripMenuItem / treeCollapseToolStripMenuItem / treeSep1 / ...
 			//
@@ -142,6 +151,7 @@ namespace MyFileExplorer
 		private TreeView folderTreeView;
 		private ContextMenuStrip treeContextMenuStrip;
 		private ToolStripMenuItem treeOpenToolStripMenuItem;
+		private ToolStripMenuItem treeOpenInNewTabToolStripMenuItem;
 		private ToolStripMenuItem treeExpandToolStripMenuItem;
 		private ToolStripMenuItem treeCollapseToolStripMenuItem;
 		private ToolStripSeparator treeSep1;

@@ -79,6 +79,13 @@ namespace MyFileExplorer
 		[Description("Raised when the user double-clicks a folder to navigate into it.")]
 		public event EventHandler<FolderEventArgs>? FolderDoubleClick;
 
+		/// <summary>
+		/// Occurs when the user chooses to open a folder in a new tab from the context menu.
+		/// </summary>
+		[Category("Action")]
+		[Description("Raised when the user requests opening a folder in a new tab.")]
+		public event EventHandler<FolderEventArgs>? OpenFolderInNewTabRequested;
+
 		public FolderContentsControl()
 		{
 			InitializeComponent();
@@ -521,6 +528,10 @@ namespace MyFileExplorer
 			var hit = listView.HitTest(listView.PointToClient(Cursor.Position));
 			var onItem = hit.Item != null && hit.Item.Tag is FolderItemTag;
 			openToolStripMenuItem.Visible = onItem;
+			var singleFolder = listView.SelectedItems.Count == 1
+				&& listView.SelectedItems[0].Tag is FolderItemTag singleTag
+				&& singleTag.IsFolder;
+			openInNewTabToolStripMenuItem.Visible = onItem && singleFolder;
 			renameToolStripMenuItem.Visible = onItem;
 			deleteToolStripMenuItem.Visible = onItem;
 			toolStripSeparator2.Visible = onItem;
@@ -537,6 +548,7 @@ namespace MyFileExplorer
 			var hasSelection = listView.SelectedItems.Count > 0;
 			var singleSelection = listView.SelectedItems.Count == 1;
 			openToolStripMenuItem.Enabled = hasSelection;
+			openInNewTabToolStripMenuItem.Enabled = singleFolder;
 			renameToolStripMenuItem.Enabled = singleSelection;
 			deleteToolStripMenuItem.Enabled = hasSelection;
 			cutToolStripMenuItem.Enabled = hasSelection;
@@ -558,6 +570,15 @@ namespace MyFileExplorer
 				else
 					FileOperations.Open(tag.FullPath);
 			}
+		}
+
+		private void OpenInNewTabContextMenu_Click(object? sender, EventArgs e)
+		{
+			if (listView.SelectedItems.Count != 1)
+				return;
+			if (listView.SelectedItems[0].Tag is not FolderItemTag tag || !tag.IsFolder)
+				return;
+			OpenFolderInNewTabRequested?.Invoke(this, new FolderEventArgs(tag.FullPath));
 		}
 
 		private void RenameContextMenu_Click(object? sender, EventArgs e) => StartRenameSelected();

@@ -30,6 +30,7 @@ namespace MyFileExplorer
 			listView = new ListView();
 			contextMenuStrip = new ContextMenuStrip(components);
 			openToolStripMenuItem = new ToolStripMenuItem();
+			openInNewTabToolStripMenuItem = new ToolStripMenuItem();
 			renameToolStripMenuItem = new ToolStripMenuItem();
 			deleteToolStripMenuItem = new ToolStripMenuItem();
 			toolStripSeparator2 = new ToolStripSeparator();
@@ -139,6 +140,7 @@ namespace MyFileExplorer
 			contextMenuStrip.ImageScalingSize = new Size(20, 20);
 			contextMenuStrip.Items.AddRange(new ToolStripItem[] {
 				openToolStripMenuItem,
+				openInNewTabToolStripMenuItem,
 				renameToolStripMenuItem,
 				deleteToolStripMenuItem,
 				toolStripSeparator2,
@@ -161,6 +163,13 @@ namespace MyFileExplorer
 			openToolStripMenuItem.Size = new Size(180, 26);
 			openToolStripMenuItem.Text = "Open";
 			openToolStripMenuItem.Click += OpenContextMenu_Click;
+			//
+			// openInNewTabToolStripMenuItem
+			//
+			openInNewTabToolStripMenuItem.Name = "openInNewTabToolStripMenuItem";
+			openInNewTabToolStripMenuItem.Size = new Size(180, 26);
+			openInNewTabToolStripMenuItem.Text = "Open in another tab";
+			openInNewTabToolStripMenuItem.Click += OpenInNewTabContextMenu_Click;
 			//
 			// renameToolStripMenuItem
 			//
@@ -259,6 +268,7 @@ namespace MyFileExplorer
 		private ListView listView;
 		private ContextMenuStrip contextMenuStrip;
 		private ToolStripMenuItem openToolStripMenuItem;
+		private ToolStripMenuItem openInNewTabToolStripMenuItem;
 		private ToolStripMenuItem renameToolStripMenuItem;
 		private ToolStripMenuItem deleteToolStripMenuItem;
 		private ToolStripSeparator toolStripSeparator2;
