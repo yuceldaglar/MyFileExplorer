@@ -42,6 +42,7 @@ namespace MyFileExplorer
 		private bool _pendingFocusCommandInput;
 		private int _runtimeOutputCharEstimate;
 		private int _outputLineMaxPixelWidth;
+		private string _shellStartupWorkingDirectory = string.Empty;
 
 		/// <summary>
 		/// Raised when a new line of output is appended.
@@ -198,10 +199,11 @@ namespace MyFileExplorer
 				_shellProcess = process;
 				_shellInput = process.StandardInput;
 				_shellInput.AutoFlush = true;
+				_shellStartupWorkingDirectory = startInfo.WorkingDirectory ?? string.Empty;
 				process.BeginOutputReadLine();
 				process.BeginErrorReadLine();
 				TerminalDiagnosticLog.Line("StartShell",
-					$"process started Id={process.Id} HasExited={process.HasExited}");
+					$"process started Id={process.Id} HasExited={process.HasExited} startupWD={_shellStartupWorkingDirectory}");
 				AppendOutputLine($"Started {_shellType} session.");
 			}
 			catch (Exception ex)
@@ -324,13 +326,42 @@ namespace MyFileExplorer
 			}
 
 			TerminalDiagnosticLog.Line("RestoreState",
-				$"ShellType={state.ShellType} outputLen={state.OutputText?.Length ?? 0} cwdLen={state.LastWorkingDirectory?.Length ?? 0}");
+				$"ShellType={state.ShellType} outputLen={state.OutputText?.Length ?? 0} cwdLen={state.LastWorkingDirectory?.Length ?? 0} isShellRunning={IsShellRunning} startupWD={_shellStartupWorkingDirectory}");
 			ShellType = state.ShellType;
 			_lastKnownWorkingDirectory = NormalizePersistedDirectory(state.LastWorkingDirectory);
+			TerminalDiagnosticLog.Line("RestoreState",
+				$"normalized restored WD={_lastKnownWorkingDirectory} shellRunning={IsShellRunning}");
+			if (IsShellRunning
+				&& !string.IsNullOrWhiteSpace(_shellStartupWorkingDirectory)
+				&& !string.IsNullOrWhiteSpace(_lastKnownWorkingDirectory)
+				&& !string.Equals(_shellStartupWorkingDirectory, _lastKnownWorkingDirectory, StringComparison.OrdinalIgnoreCase))
+			{
+				TerminalDiagnosticLog.Line("RestoreState",
+					"Detected startup/restored directory mismatch while shell already running. Persisted WD is not automatically applied in current restore flow.");
+			}
+			ApplyRestoredWorkingDirectoryToRunningShell();
 			PopulateOutputListFromText(LimitPersistedOutput(state.OutputText ?? string.Empty));
 			RestoreDirectoryHistory(state.DirectoryHistory);
 			ResetHistoryNavigation();
 			ScheduleFocusCommandInput();
+		}
+
+		private void ApplyRestoredWorkingDirectoryToRunningShell()
+		{
+			if (!IsShellRunning || string.IsNullOrWhiteSpace(_lastKnownWorkingDirectory))
+				return;
+
+			if (!Directory.Exists(_lastKnownWorkingDirectory))
+			{
+				TerminalDiagnosticLog.Line("RestoreState",
+					$"Skip applying restored WD because directory does not exist: {_lastKnownWorkingDirectory}");
+				return;
+			}
+
+			var command = BuildSetDirectoryCommand(_lastKnownWorkingDirectory);
+			TerminalDiagnosticLog.Line("RestoreState",
+				$"Applying restored working directory to running shell: {TerminalDiagnosticLog.SafePreview(_lastKnownWorkingDirectory, 200)}");
+			SendCommand(command, echoCommand: false, suppressOutput: true);
 		}
 
 		private void SendCommand(string command, bool echoCommand, bool suppressOutput = false)
