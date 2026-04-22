@@ -165,6 +165,8 @@ namespace MyFileExplorer
 			var restorePath = !string.IsNullOrWhiteSpace(treeSelectedPath) && Directory.Exists(treeSelectedPath)
 				? treeSelectedPath
 				: (!string.IsNullOrWhiteSpace(currentPath) && Directory.Exists(currentPath) ? currentPath : string.Empty);
+			TerminalDiagnosticLog.Line("Explorer.RestoreState",
+				$"restorePath={restorePath} treeSelectedPath={treeSelectedPath} currentPath={currentPath} terminalPersistedWD={state.Terminal?.LastWorkingDirectory ?? string.Empty}");
 
 			try
 			{
